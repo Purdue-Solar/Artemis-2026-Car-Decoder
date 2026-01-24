@@ -1,8 +1,8 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 
-if [ ! -f "./store_output.txt" ]; then
-    echo "Missing store_output.txt file."
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <output_file_path>"
     exit 1
 fi
 

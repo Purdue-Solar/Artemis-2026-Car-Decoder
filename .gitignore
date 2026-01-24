@@ -1,5 +1,6 @@
-# Helper files for scripts
-store_output.txt
+# Project specific ignores
+Raw/*
+!Raw/
 
 # Prerequisites
 *.d
