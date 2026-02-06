@@ -13,6 +13,18 @@ typedef struct {
 } Buffer;
 
 /**
+ * Initialize a circular buffer.
+ *
+ * @return 0 on success, -1 on error
+ */
+int buffer_init(Buffer *buffer, uint8_t *backing_mem, size_t size);
+
+/**
+ * Reset a circular buffer to empty state.
+ */
+void buffer_reset(Buffer *buffer);
+
+/**
  * Write bytes into the circular buffer.
  * Overwrites oldest data if buffer is full.
  *
@@ -27,4 +39,6 @@ int buffer_write(Buffer *buffer, const uint8_t *data, size_t data_len);
  */
 int buffer_read(Buffer *buffer, uint8_t *data, size_t data_len);
 
+int buffer_init(Buffer *buffer, uint8_t *backing_mem, size_t size);
+void buffer_reset(Buffer *buffer);
 #endif // BUFFER_H
