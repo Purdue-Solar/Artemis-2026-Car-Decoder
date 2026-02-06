@@ -1,4 +1,4 @@
-#include <stdint.h>
+/*#include <stdint.h>
 #include <string.h>
 
 typedef struct {
@@ -46,3 +46,5 @@ int buffer_read(Buffer *buffer, uint8_t *data, size_t data_len) {
     
     return 0;  // success
 }
+
+*/
