@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 struct message {
-    uint32_t time_stamp;
+    int32_t time_stamp;
     uint8_t battery_temp;
     uint8_t SOC;
     uint8_t limit;
