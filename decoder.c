@@ -13,22 +13,20 @@
  * Assumes big-endian byte order
  * 
  * Parameters:
- *   filepath - path to the binary file
+ *   file - the file to read from (an actual file or a standard stream)
  *   msg - pointer to struct message to populate
  * 
  * Returns: 0 for success, 1 for any error
  */
-int read_message_from_file(const char *filepath, struct message *msg) {
-    FILE *file = fopen(filepath, "rb");
+int read_message_from_file(FILE *file, struct message *msg) {
     if (file == NULL) {
-        fprintf(stderr, "Error: Could not open file %s\n", filepath);
+        fprintf(stderr, "Error: file is NULL\n");
         return 1;
     }
     
     unsigned char buffer[19];
     
     size_t bytes_read = fread(buffer, 1, 19, file);
-    fclose(file);
     
     if (bytes_read != 19) {
         fprintf(stderr, "Error: Expected 19 bytes, read %zu\n", bytes_read);
@@ -103,6 +101,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("This code is chopped\n");
+    FILE *out_file = fopen(argv[1], "a");
+    if (out_file == NULL) {
+        printf("Destination file cannot be written to (%s)", argv[1]);
+        return 1;
+    }
+
+    /* Write actual code here */
+
+    fclose(out_file);
+    out_file = NULL;
     return 0;
 }

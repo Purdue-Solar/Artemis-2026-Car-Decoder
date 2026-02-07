@@ -2,6 +2,7 @@
 #define DECODER_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 struct message {
     uint32_t time_stamp;
@@ -17,7 +18,7 @@ struct message {
     uint16_t oh_no_bits;
 };
 
-int read_message_from_file(const char *filepath, struct message *msg);
+int read_message_from_file(FILE *file, struct message *msg);
 int main(int argc, char *argv[]);
 
 #endif /* DECODER_H */
