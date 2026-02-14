@@ -1,8 +1,14 @@
 # Project specific ignores
 Raw/*
 !Raw/
+Out/*
+!Out/
 Test/*
 !Test/
+Test_Out/*
+!Test_Out/
+Test_Expected/*
+!Test_Expected/
 
 .vscode
 

@@ -10,109 +10,148 @@
  * Reads a struct message from a binary file (19 bytes).
  * Overwrites the contents of the message pointer with deserialized data.
  * Assumes little-endian byte order
- * 
+ *
  * Parameters:
  *   file - the file to read from (an actual file or a standard stream)
  *   msg - pointer to struct message to populate
- * 
+ *
  * Returns: 0 for success, 1 for any error
  */
 int read_message_from_file(FILE *file, struct message *msg) {
-    if (file == NULL) {
-        fprintf(stderr, "Error: file is NULL\n");
-        return 1;
-    }
-    
-    unsigned char buffer[19];
-    
-    size_t bytes_read = fread(buffer, 1, 19, file);
-    
-    if (bytes_read != 19) {
-        fprintf(stderr, "Error: Expected 19 bytes, read %zu\n", bytes_read);
-        return 1;
-    }
-    
-    int offset = 0;
+  if (file == NULL) {
+    fprintf(stderr, "Error: file is NULL\n");
+    return 1;
+  }
 
-    msg->time_stamp = ((uint32_t)buffer[offset]) |
-                      ((uint32_t)buffer[offset + 1] << 8) |
-                      ((uint32_t)buffer[offset + 2] << 16) |
-                      ((uint32_t)buffer[offset + 3] << 24);
-    offset += 4;
+  unsigned char buffer[MESSAGE_SIZE_IN_BYTES];
 
-    msg->battery_temp = buffer[offset++];
+  size_t bytes_read = fread(buffer, 1, MESSAGE_SIZE_IN_BYTES, file);
 
-    msg->SOC = buffer[offset++];
+  if (bytes_read != MESSAGE_SIZE_IN_BYTES) {
+    fprintf(stderr, "Error: Expected 19 bytes, read %zu\n", bytes_read);
+    return 1;
+  }
 
-    msg->limit = buffer[offset++];
+  int offset = 0;
 
-    msg->diag_one = buffer[offset++];
+  msg->time_stamp = ((uint32_t)buffer[offset]) |
+                    ((uint32_t)buffer[offset + 1] << 8) |
+                    ((uint32_t)buffer[offset + 2] << 16) |
+                    ((uint32_t)buffer[offset + 3] << 24);
+  offset += 4;
 
-    msg->diag_two = buffer[offset++];
+  msg->battery_temp = buffer[offset++];
 
-    msg->motor_curr = convert_to_b_float(((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8));
-    offset += 2;
+  msg->SOC = buffer[offset++];
 
-    msg->motor_vel = convert_to_b_float(((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8));
-    offset += 2;
+  msg->limit = buffer[offset++];
 
-    msg->sink = convert_to_b_float(((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8));
-    offset += 2;
+  msg->diag_one = buffer[offset++];
 
-    msg->temp = convert_to_b_float(((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8));
-    offset += 2;
+  msg->diag_two = buffer[offset++];
 
-    msg->oh_no_bits = ((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8);
-    offset += 2;
+  msg->motor_curr = convert_to_b_float(((uint16_t)buffer[offset]) |
+                                       ((uint16_t)buffer[offset + 1] << 8));
+  offset += 2;
 
-    return 0;
+  msg->motor_vel = convert_to_b_float(((uint16_t)buffer[offset]) |
+                                      ((uint16_t)buffer[offset + 1] << 8));
+  offset += 2;
+
+  msg->sink = convert_to_b_float(((uint16_t)buffer[offset]) |
+                                 ((uint16_t)buffer[offset + 1] << 8));
+  offset += 2;
+
+  msg->temp = convert_to_b_float(((uint16_t)buffer[offset]) |
+                                 ((uint16_t)buffer[offset + 1] << 8));
+  offset += 2;
+
+  msg->oh_no_bits =
+      ((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8);
+  offset += 2;
+
+  return 0;
 }
 
-/* 
+/*
  * Function Name: convert_to_b_float
  * Converts a 16 bit integer into a b float
- * 
+ *
  * Parameters:
  *   data - is the 16 bit integer to convert
- * 
+ *
  * Returns: the b float
  */
 float convert_to_b_float(uint16_t data) {
-    uint32_t upcast_data = data;
-    upcast_data << 16;
-    return ((float)upcast_data);
+  uint32_t upcast_data = data;
+  upcast_data = upcast_data << 16;
+  return ((float)upcast_data);
 }
 
 /*
  * Function Name: main
  * The entry point of the decoder.
- * 
+ *
  * Returns: An exit code
  */
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        printf("Expected 1 argument, gotten %d\n", (argc - 1));
-        printf("Arguments read:\n");
-        for (int i = 1; i < argc; i++) {
-            printf("%s", argv[i]);
-            if (i != argc - 1) {
-                printf(", ");
-            }
-        }
-        printf("\n");
-        printf("Usage: <executable> <output_path>\n");
-        return 1;
+  FILE *in_file = NULL;
+  FILE *out_file = NULL;
+  int return_code = 0;
+  if ((argc != 2) || (argc != 3)) {
+    fprintf(stderr, "Expected 2 or less arguments, gotten %d\n", (argc - 1));
+    fprintf(stderr, "Arguments read:\n");
+    for (int i = 1; i < argc; i++) {
+      fprintf(stderr, "%s", argv[i]);
+      if (i != argc - 1) {
+        printf(", ");
+      }
     }
-
-    FILE *out_file = fopen(argv[1], "a");
-    if (out_file == NULL) {
-        printf("Destination file cannot be written to (%s)", argv[1]);
-        return 1;
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Usage: <executable> <output_path> or\n");
+    fprintf(stderr, "Usage: <executable> <output_path> <input_path>\n");
+    return_code = BAD_NUM_ARGUMENTS;
+    goto cleanup;
+  }
+  if (argc == 3) {
+    in_file = fopen(argv[2], "rb");
+    if (in_file == NULL) {
+      printf("Input file cannot be opened");
     }
+    return_code = FILE_READ_ERR;
+    goto cleanup;
+  }
+  else {
+    in_file = stdin;
+  }
+  out_file = fopen(argv[1], "w");
+  if (out_file == NULL) {
+    printf("Destination file cannot be written to (%s)", argv[1]);
+    return_code = FILE_WRITE_ERR;
+    goto cleanup;
+  }
 
-    /* Write actual code here */
+  /* Write actual code here */
+  struct message message_data = {0};
+  int message_code = read_message_from_file(in_file, &message_data);
+  while (message_code == 0) {
+    fprintf(out_file, "%ld,%u,%u,%u,%u,%u,%f,%f,%f,%f,%u\n",
+            message_data.time_stamp, message_data.battery_temp,
+            message_data.SOC, message_data.limit, message_data.diag_one,
+            message_data.diag_two, message_data.motor_curr,
+            message_data.motor_vel, message_data.sink, message_data.temp,
+            message_data.oh_no_bits);
+    message_code = read_message_from_file(in_file, &message_data);
+  }
 
+cleanup:
+  if (in_file != NULL) {
+    fclose(in_file);
+    in_file = NULL;
+  }
+  if (out_file != NULL) {
     fclose(out_file);
     out_file = NULL;
-    return 0;
+  }
+  return return_code;
 }

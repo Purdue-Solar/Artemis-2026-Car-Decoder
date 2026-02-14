@@ -5,18 +5,28 @@
 #include <stdio.h>
 #include <time.h>
 
+/* Error codes */
+
+#define BAD_NUM_ARGUMENTS (-1)
+#define FILE_READ_ERR (-2)
+#define FILE_WRITE_ERR (-3)
+
+/* Program Constants */
+
+#define MESSAGE_SIZE_IN_BYTES (19)
+
 struct message {
-    time_t time_stamp;
-    uint8_t battery_temp;
-    uint8_t SOC;
-    uint8_t limit;
-    uint8_t diag_one;
-    uint8_t diag_two;
-    float motor_curr;
-    float motor_vel;
-    float sink;
-    float temp;
-    uint16_t oh_no_bits;
+  time_t time_stamp;    /* 32 bit long */
+  uint8_t battery_temp; /* Unsigned integer in Celsius */
+  uint8_t SOC;          /* Unsigned integer */
+  uint8_t limit;        /* Unsigned integer*/
+  uint8_t diag_one;     /* Unsigned integer */
+  uint8_t diag_two;     /* Unsigned integer */
+  float motor_curr;     /* B-float (uint16 left shift 16 cast into float)*/
+  float motor_vel;      /* B-float */
+  float sink;           /* B-float */
+  float temp;           /* B-float */
+  uint16_t oh_no_bits;  /* 2 bytes for "boolean" data */
 };
 
 int read_message_from_file(FILE *file, struct message *msg);
