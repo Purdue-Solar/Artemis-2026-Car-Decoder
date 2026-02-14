@@ -8,9 +8,8 @@
 /*
  * Function Name: read_message_from_file
  * Reads a struct message from a binary file (19 bytes).
- * Assumes message is pure data (no padding, no message header...)
  * Overwrites the contents of the message pointer with deserialized data.
- * Assumes big-endian byte order
+ * Assumes little-endian byte order
  * 
  * Parameters:
  *   file - the file to read from (an actual file or a standard stream)
@@ -34,50 +33,54 @@ int read_message_from_file(FILE *file, struct message *msg) {
     }
     
     int offset = 0;
-    
-    // Deserialize time_stamp (4 bytes, big-endian)
-    msg->time_stamp = ((uint32_t)buffer[offset] << 24) |
-                      ((uint32_t)buffer[offset + 1] << 16) |
-                      ((uint32_t)buffer[offset + 2] << 8) |
-                      ((uint32_t)buffer[offset + 3]);
+
+    msg->time_stamp = ((uint32_t)buffer[offset]) |
+                      ((uint32_t)buffer[offset + 1] << 8) |
+                      ((uint32_t)buffer[offset + 2] << 16) |
+                      ((uint32_t)buffer[offset + 3] << 24);
     offset += 4;
-    
-    // Deserialize battery_temp (1 byte)
+
     msg->battery_temp = buffer[offset++];
-    
-    // Deserialize SOC (1 byte)
+
     msg->SOC = buffer[offset++];
-    
-    // Deserialize limit (1 byte)
+
     msg->limit = buffer[offset++];
-    
-    // Deserialize diag_one (1 byte)
+
     msg->diag_one = buffer[offset++];
-    
-    // Deserialize diag_two (1 byte)
+
     msg->diag_two = buffer[offset++];
-    
-    // Deserialize motor_curr (2 bytes, big-endian)
-    msg->motor_curr = ((uint16_t)buffer[offset] << 8) | ((uint16_t)buffer[offset + 1]);
+
+    msg->motor_curr = convert_to_b_float(((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8));
     offset += 2;
-    
-    // Deserialize motor_vel (2 bytes, big-endian)
-    msg->motor_vel = ((uint16_t)buffer[offset] << 8) | ((uint16_t)buffer[offset + 1]);
+
+    msg->motor_vel = convert_to_b_float(((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8));
     offset += 2;
-    
-    // Deserialize sink (2 bytes, big-endian)
-    msg->sink = ((uint16_t)buffer[offset] << 8) | ((uint16_t)buffer[offset + 1]);
+
+    msg->sink = convert_to_b_float(((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8));
     offset += 2;
-    
-    // Deserialize temp (2 bytes, big-endian)
-    msg->temp = ((uint16_t)buffer[offset] << 8) | ((uint16_t)buffer[offset + 1]);
+
+    msg->temp = convert_to_b_float(((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8));
     offset += 2;
-    
-    // Deserialize oh_no_bits (2 bytes, big-endian)
-    msg->oh_no_bits = ((uint16_t)buffer[offset] << 8) | ((uint16_t)buffer[offset + 1]);
+
+    msg->oh_no_bits = ((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8);
     offset += 2;
 
     return 0;
+}
+
+/* 
+ * Function Name: convert_to_b_float
+ * Converts a 16 bit integer into a b float
+ * 
+ * Parameters:
+ *   data - is the 16 bit integer to convert
+ * 
+ * Returns: the b float
+ */
+float convert_to_b_float(uint16_t data) {
+    uint32_t upcast_data = data;
+    upcast_data << 16;
+    return ((float)upcast_data);
 }
 
 /*
