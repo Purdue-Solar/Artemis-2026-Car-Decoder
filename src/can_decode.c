@@ -1,4 +1,5 @@
 /* can_decode.c */
+/* Authors: Daniel Xu */
 #include "can_decode.h"
 #include <stdio.h>
 

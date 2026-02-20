@@ -1,3 +1,5 @@
+/* Authors:, Daniel Xu */
+
 #include "buffer.h"
 #include <stdlib.h>
 

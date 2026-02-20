@@ -1,4 +1,5 @@
 /* main.c */
+/* Authors: Daniel Xu */
 #include <stdio.h>
 #include "buffer.h"
 #include "can_decode.h"

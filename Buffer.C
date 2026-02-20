@@ -1,3 +1,7 @@
+/*
+* Implementation of a simple circular buffer in, no need for the extra RAM usage.
+*/
+
 /*#include <stdint.h>
 #include <string.h>
 
