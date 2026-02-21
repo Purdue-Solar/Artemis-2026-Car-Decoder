@@ -16,7 +16,7 @@
  *   file - the file to read from (an actual file or a standard stream)
  *   msg - pointer to struct message to populate
  *
- * Returns: 0 for success, 1 for any error
+ * Returns: 0 for success, 1 for any error or end of file
  */
 int read_message_from_file(FILE *file, struct message *msg) {
   if (file == NULL) {
@@ -72,7 +72,7 @@ int read_message_from_file(FILE *file, struct message *msg) {
   offset += 2;
 
   return 0;
-}
+} /* read_message_from_file() */
 
 /*
  * Function Name: convert_to_b_float
@@ -88,7 +88,33 @@ float convert_to_b_float(uint16_t data) {
   float result;
   memcpy(&result, &bits, sizeof(float));
   return result;
-}
+} /* convert_to_b_float() */
+
+/*
+ * Function Name: parse_status_flags
+ * Parses a 16-bit status field into individual flag components
+ *
+ * Parameters:
+ *   bits - the 16-bit status word to parse
+ *   flags - pointer to status_flags struct to populate
+ *
+ * Returns: void
+ */
+void parse_status_flags(uint16_t bits, struct status_flags *flags) {
+  flags->regen = (bits >> 0) & 0x01;
+  flags->cruise_down = (bits >> 1) & 0x01;
+  flags->cruise_up = (bits >> 2) & 0x01;
+  flags->cruise = (bits >> 3) & 0x01;
+  flags->aux_over_voltage = (bits >> 4) & 0x01;
+  flags->aux_under_voltage = (bits >> 5) & 0x01;
+  flags->aux_over_current = (bits >> 6) & 0x01;
+  flags->aux_current_warning = (bits >> 7) & 0x01;
+  flags->main_over_voltage = (bits >> 8) & 0x01;
+  flags->main_under_voltage = (bits >> 9) & 0x01;
+  flags->main_over_current_error = (bits >> 10) & 0x01;
+  flags->main_current_warning = (bits >> 11) & 0x01;
+  flags->aux_condition = (bits >> 12) & 0x0F;
+} /* parse_status_flags() */
 
 /*
  * Function Name: main
@@ -156,4 +182,4 @@ cleanup:
     out_file = NULL;
   }
   return return_code;
-}
+} /* main() */
