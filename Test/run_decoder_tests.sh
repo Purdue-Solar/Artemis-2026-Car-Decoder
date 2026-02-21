@@ -1,8 +1,16 @@
 #!/bin/sh
 set -eu
 
+# Parse command line arguments
+QUIET=0
+for arg in "$@"; do
+  if [ "$arg" = "--quiet" ] || [ "$arg" = "-q" ]; then
+    QUIET=1
+  fi
+done
+
 # Constants
-NUM_SYNTHETIC_TESTS=100
+NUM_SYNTHETIC_TESTS=1000
 MESSAGE_COUNT=500
 SEED_RETRY_LIMIT=100
 TEST_DIR_NAME="Test"
@@ -42,16 +50,38 @@ TEST_BIN_MOD="$OUT_DIR/$TEST_BIN_MOD_NAME"
 OBJ_AGG_FILE="$OUT_DIR/$OBJ_AGG_FILE_NAME"
 TEST_BIN_AGG="$OUT_DIR/$TEST_BIN_AGG_NAME"
 
-mkdir -p "$OUT_DIR"
+# Logging helper
+log() {
+  if [ "$QUIET" -eq 0 ]; then
+    echo "$@"
+  fi
+}
 
+log_always() {
+  echo "$@"
+}
+
+# ============================================================================
+# STEP 1: CLEAN UP TEST DIRECTORIES
+# ============================================================================
+log "Cleaning up test directories..."
+mkdir -p "$OUT_DIR" "$GENERATED_DIR" "$GENERATED_EXPECTED_DIR"
+rm -f "$OUT_DIR"/*.o "$OUT_DIR"/"$TEST_BIN_NAME"* "$OUT_DIR"/*.bin "$OUT_DIR"/*.csv
+rm -f "$GENERATED_DIR"/*.hex "$GENERATED_EXPECTED_DIR"/*.expected.csv
+
+# ============================================================================
+# STEP 2: GENERATE SYNTHETIC TEST DATA
+# ============================================================================
 USED_SEEDS_FILE="$OUT_DIR/$GENERATED_SEED_FILE_NAME"
 > "$USED_SEEDS_FILE"
 
-mkdir -p "$GENERATED_DIR" "$GENERATED_EXPECTED_DIR"
-rm -f "$GENERATED_DIR"/*.hex "$GENERATED_EXPECTED_DIR"/*.expected.csv
-
 if [ "$NUM_SYNTHETIC_TESTS" -gt 0 ]; then
+  log "Generating $NUM_SYNTHETIC_TESTS synthetic test cases..."
   i=0
+  gen_start_time=$(python3 -c "import time; print(time.time())")
+  last_update_time="$gen_start_time"
+  UPDATE_INTERVAL=2  # Update every 2 seconds in quiet mode, less overhead
+  
   while [ "$i" -lt "$NUM_SYNTHETIC_TESTS" ]; do
     seed="$RANDOM"
     attempts=0
@@ -59,11 +89,9 @@ if [ "$NUM_SYNTHETIC_TESTS" -gt 0 ]; then
       seed="$RANDOM"
       attempts=$((attempts + 1))
       if [ "$attempts" -ge "$SEED_RETRY_LIMIT" ]; then
-        # Repopulate with seeds from already-generated files
         > "$USED_SEEDS_FILE"
         for hex_file in "$GENERATED_DIR"/"$SYNTHETIC_NAME_PREFIX"*.hex; do
           if [ -f "$hex_file" ]; then
-            # Extract seed from filename (e.g., synthetic_12h_500_12345.hex -> 12345)
             basename_only=$(basename "$hex_file" .hex)
             extracted_seed="${basename_only#$SYNTHETIC_NAME_PREFIX}"
             echo "$extracted_seed" >> "$USED_SEEDS_FILE"
@@ -74,242 +102,240 @@ if [ "$NUM_SYNTHETIC_TESTS" -gt 0 ]; then
     done
     echo "$seed" >> "$USED_SEEDS_FILE"
     name="$SYNTHETIC_NAME_PREFIX$seed"
+    
     python3 "$TEST_DIR/$GENERATOR_SCRIPT_NAME" \
       "$name" "$seed" \
       --hex-dir "$GENERATED_DIR" \
-      --expected-dir "$GENERATED_EXPECTED_DIR"
+      --expected-dir "$GENERATED_EXPECTED_DIR" > /dev/null 2>&1
     i=$((i + 1))
-  done
-# Compile unoptimized version
-fi
-
-clang -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_FILE"
-clang -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_FILE" -o "$TEST_BIN"
-
-found_hex=false
-generated_count=0
-generated_start=""
-generated_end=""
-for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
-  EXPECTED_BASE="$EXPECTED_DIR"
-  if [ "$HEX_DIR" = "$GENERATED_DIR" ]; then
-    EXPECTED_BASE="$GENERATED_EXPECTED_DIR"
-    generated_start=$(python3 - <<'PY'
+    
+    # Update progress periodically (only in non-quiet mode)
+    if [ "$QUIET" -eq 0 ]; then
+      read current_time should_update eta <<< $(python3 - <<PY
 import time
-print(time.time())
+current = time.time()
+should_update = current - $last_update_time >= $UPDATE_INTERVAL or $i >= $NUM_SYNTHETIC_TESTS
+if should_update and $i > 0:
+    elapsed = current - $gen_start_time
+    avg_time = elapsed / $i
+    remaining = $NUM_SYNTHETIC_TESTS - $i
+    eta_seconds = avg_time * remaining
+    if eta_seconds < 60:
+        eta = f"{eta_seconds:.0f}s"
+    elif eta_seconds < 3600:
+        eta = f"{eta_seconds/60:.1f}m"
+    else:
+        eta = f"{eta_seconds/3600:.1f}h"
+    print(f"{current} 1 {eta}")
+else:
+    print(f"{current} 0 ")
 PY
 )
+      
+      if [ "$should_update" = "1" ]; then
+        printf "\rGenerating synthetic test %d of %d (ETA: %s)...  " "$i" "$NUM_SYNTHETIC_TESTS" "$eta"
+        last_update_time="$current_time"
+      fi
+    fi
+  done
+  
+  if [ "$QUIET" -eq 0 ]; then
+    echo ""
   fi
+  log "Synthetic test generation complete."
+fi
 
+# ============================================================================
+# STEP 3: COMPILE ALL OPTIMIZATION LEVELS
+# ============================================================================
+log "Compiling decoder with all optimization levels..."
+clang -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_FILE" 2>/dev/null
+clang -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_FILE" -o "$TEST_BIN" 2>/dev/null
+
+clang $OPT_FLAG_LIGHT -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_LIGHT_FILE" 2>/dev/null
+clang $OPT_FLAG_LIGHT -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_LIGHT_FILE" -o "$TEST_BIN_LIGHT" 2>/dev/null
+
+clang $OPT_FLAG_MOD -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_MOD_FILE" 2>/dev/null
+clang $OPT_FLAG_MOD -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_MOD_FILE" -o "$TEST_BIN_MOD" 2>/dev/null
+
+clang $OPT_FLAG_AGG -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_AGG_FILE" 2>/dev/null
+clang $OPT_FLAG_AGG -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_AGG_FILE" -o "$TEST_BIN_AGG" 2>/dev/null
+
+log "Compilation complete."
+
+# ============================================================================
+# STEP 4: BENCHMARK ALL OPTIMIZATION LEVELS
+# ============================================================================
+log "Running benchmarks..."
+
+# Convert hex files to binary (do this once, reuse for all optimization levels)
+log "Converting hex files to binary..."
+for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
   for HEX_FILE in "$HEX_DIR"/*.hex; do
     if [ ! -e "$HEX_FILE" ]; then
       continue
     fi
-
-    found_hex=true
+    
     base_name=$(basename "$HEX_FILE" .hex)
     BIN_FILE="$OUT_DIR/$base_name.bin"
-    OUT_FILE="$OUT_DIR/$base_name.csv"
-    EXPECTED_FILE="$EXPECTED_BASE/$base_name.expected.csv"
-
-    if [ ! -f "$EXPECTED_FILE" ]; then
-      echo "Missing expected output: $EXPECTED_FILE" >&2
-      exit 1
-    fi
-
+    
     if command -v xxd >/dev/null 2>&1; then
       xxd -r -p "$HEX_FILE" > "$BIN_FILE"
     else
       python3 "$TEST_DIR/hex_to_bin.py" "$HEX_FILE" "$BIN_FILE"
     fi
-
-    "$TEST_BIN" "$BIN_FILE" "$OUT_FILE"
-
-    if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
-      echo "Output differs from expected for $base_name:" >&2
-      echo "Red is expected" >&2
-      echo "Green is actual" >&2
-      git diff --no-index -- "$EXPECTED_FILE" "$OUT_FILE" || true
-      exit 1
-    fi
-
-    echo "OK: $base_name"
-
-    if [ "$HEX_DIR" = "$GENERATED_DIR" ]; then
-      generated_count=$((generated_count + 1))
-    fi
   done
-
-  if [ "$HEX_DIR" = "$GENERATED_DIR" ]; then
-    generated_end=$(python3 - <<'PY'
-import time
-print(time.time())
-PY
-)
-  fi
 done
 
-if [ "$found_hex" = false ]; then
-  echo "No .hex files found in $TEST_DIR or $GENERATED_DIR" >&2
+# Function to run benchmark for a specific optimization level
+run_benchmark() {
+  opt_level="$1"
+  test_bin="$2"
+  suffix="$3"
+  
+  log "Benchmarking $opt_level..."
+  
+  benchmark_start=$(python3 -c "import time; print(time.time())")
+  file_count=0
+  
+  for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
+    for HEX_FILE in "$HEX_DIR"/*.hex; do
+      if [ ! -e "$HEX_FILE" ]; then
+        continue
+      fi
+      
+      base_name=$(basename "$HEX_FILE" .hex)
+      BIN_FILE="$OUT_DIR/$base_name.bin"
+      OUT_FILE="$OUT_DIR/${base_name}${suffix}.csv"
+      
+      "$test_bin" "$BIN_FILE" "$OUT_FILE"
+      file_count=$((file_count + 1))
+    done
+  done
+  
+  benchmark_end=$(python3 -c "import time; print(time.time())")
+  
+  # Calculate and store benchmark results
+  echo "$opt_level|$benchmark_start|$benchmark_end|$file_count"
+}
+
+# Run all benchmarks
+benchmark_results=""
+benchmark_results="$benchmark_results$(run_benchmark 'Unoptimized' "$TEST_BIN" '')
+"
+benchmark_results="$benchmark_results$(run_benchmark 'Light -O1' "$TEST_BIN_LIGHT" '_light')
+"
+benchmark_results="$benchmark_results$(run_benchmark 'Moderate -O2' "$TEST_BIN_MOD" '_mod')
+"
+benchmark_results="$benchmark_results$(run_benchmark 'Aggressive -O3' "$TEST_BIN_AGG" '_agg')
+"
+
+# ============================================================================
+# STEP 5: COMPARE EXPECTED VS ACTUAL (REPORT FIRST ISSUE ONLY)
+# ============================================================================
+log "Validating results..."
+
+first_error=""
+for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
+  EXPECTED_BASE="$EXPECTED_DIR"
+  if [ "$HEX_DIR" = "$GENERATED_DIR" ]; then
+    EXPECTED_BASE="$GENERATED_EXPECTED_DIR"
+  fi
+  
+  for HEX_FILE in "$HEX_DIR"/*.hex; do
+    if [ ! -e "$HEX_FILE" ]; then
+      continue
+    fi
+    
+    base_name=$(basename "$HEX_FILE" .hex)
+    EXPECTED_FILE="$EXPECTED_BASE/$base_name.expected.csv"
+    
+    if [ ! -f "$EXPECTED_FILE" ]; then
+      first_error="Missing expected output: $EXPECTED_FILE"
+      break 2
+    fi
+    
+    # Check unoptimized version
+    OUT_FILE="$OUT_DIR/$base_name.csv"
+    if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
+      first_error="Unoptimized: Output differs from expected for $base_name"
+      break 2
+    fi
+    
+    # Check -O1 version
+    OUT_FILE="$OUT_DIR/${base_name}_light.csv"
+    if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
+      first_error="Light -O1: Output differs from expected for $base_name"
+      break 2
+    fi
+    
+    # Check -O2 version
+    OUT_FILE="$OUT_DIR/${base_name}_mod.csv"
+    if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
+      first_error="Moderate -O2: Output differs from expected for $base_name"
+      break 2
+    fi
+    
+    # Check -O3 version
+    OUT_FILE="$OUT_DIR/${base_name}_agg.csv"
+    if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
+      first_error="Aggressive -O3: Output differs from expected for $base_name"
+      break 2
+    fi
+  done
+done
+
+# Report first error if found
+if [ -n "$first_error" ]; then
+  log_always "ERROR: $first_error"
+  
+  # Show diff for the failed test
+  for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
+    EXPECTED_BASE="$EXPECTED_DIR"
+    if [ "$HEX_DIR" = "$GENERATED_DIR" ]; then
+      EXPECTED_BASE="$GENERATED_EXPECTED_DIR"
+    fi
+    
+    for HEX_FILE in "$HEX_DIR"/*.hex; do
+      if [ ! -e "$HEX_FILE" ]; then
+        continue
+      fi
+      
+      base_name=$(basename "$HEX_FILE" .hex)
+      EXPECTED_FILE="$EXPECTED_BASE/$base_name.expected.csv"
+      
+      for suffix in "" "_light" "_mod" "_agg"; do
+        OUT_FILE="$OUT_DIR/${base_name}${suffix}.csv"
+        if [ -f "$OUT_FILE" ] && [ -f "$EXPECTED_FILE" ]; then
+          if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
+            log_always "Red is expected, Green is actual:"
+            git diff --no-index -- "$EXPECTED_FILE" "$OUT_FILE" || true
+            exit 1
+          fi
+        fi
+      done
+    done
+  done
   exit 1
 fi
 
-if [ -n "$generated_start" ] && [ -n "$generated_end" ] && [ "$generated_count" -gt 0 ]; then
-  python3 "$TEST_DIR/benchmark_generated_suite.py" "$generated_start" "$generated_end" "$generated_count" "$MESSAGE_COUNT"
+log "All tests passed!"
 
-  # Compile Light Optimization (-O1) version and benchmark
-  echo ""
-  echo "Compiling Light Optimization (-O1)..."
-  clang $OPT_FLAG_LIGHT -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_LIGHT_FILE"
-  clang $OPT_FLAG_LIGHT -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_LIGHT_FILE" -o "$TEST_BIN_LIGHT"
+# ============================================================================
+# PRINT BENCHMARK RESULTS
+# ============================================================================
+log_always ""
+log_always "Benchmark Results:"
+log_always "=================="
 
-  light_generated_count=0
-  light_generated_start=""
-  light_generated_end=""
-
-  # Benchmark Light Optimization on generated suite only
-  if [ -d "$GENERATED_DIR" ] && [ "$(ls -1 "$GENERATED_DIR" 2>/dev/null | wc -l)" -gt 0 ]; then
-    light_generated_start=$(python3 - <<'PY'
-import time
-print(time.time())
+echo "$benchmark_results" | grep '|' | while IFS='|' read -r opt_level start_time end_time file_count; do
+  if [ -n "$opt_level" ]; then
+    elapsed=$(python3 - <<PY
+elapsed = $end_time - $start_time
+print(f"{elapsed:.3f}")
 PY
 )
-
-    for HEX_FILE in "$GENERATED_DIR"/*.hex; do
-      if [ ! -e "$HEX_FILE" ]; then
-        continue
-      fi
-
-      base_name=$(basename "$HEX_FILE" .hex)
-      BIN_FILE="$OUT_DIR/$base_name.bin"
-      OUT_FILE="$OUT_DIR/${base_name}_light.csv"
-      EXPECTED_FILE="$GENERATED_EXPECTED_DIR/$base_name.expected.csv"
-
-      if [ ! -f "$BIN_FILE" ]; then
-        if command -v xxd >/dev/null 2>&1; then
-          xxd -r -p "$HEX_FILE" > "$BIN_FILE"
-        else
-          python3 "$TEST_DIR/hex_to_bin.py" "$HEX_FILE" "$BIN_FILE"
-        fi
-      fi
-
-      "$TEST_BIN_LIGHT" "$BIN_FILE" "$OUT_FILE"
-
-      if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
-        echo "Output differs from expected for $base_name in Light Optimization version:" >&2
-        exit 1
-      fi
-
-      light_generated_count=$((light_generated_count + 1))
-    done
-
-    light_generated_end=$(python3 - <<'PY'
-import time
-print(time.time())
-PY
-)
+    log_always "$opt_level: ${elapsed}s for $file_count files"
   fi
+done
 
-  # Compile Moderate Optimization (-O2) version and benchmark
-  echo ""
-  echo "Compiling Moderate Optimization (-O2)..."
-  clang $OPT_FLAG_MOD -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_MOD_FILE"
-  clang $OPT_FLAG_MOD -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_MOD_FILE" -o "$TEST_BIN_MOD"
-
-  mod_generated_count=0
-  mod_generated_start=""
-  mod_generated_end=""
-
-  # Benchmark Moderate Optimization on generated suite only
-  if [ -d "$GENERATED_DIR" ] && [ "$(ls -1 "$GENERATED_DIR" 2>/dev/null | wc -l)" -gt 0 ]; then
-    mod_generated_start=$(python3 - <<'PY'
-import time
-print(time.time())
-PY
-)
-
-    for HEX_FILE in "$GENERATED_DIR"/*.hex; do
-      if [ ! -e "$HEX_FILE" ]; then
-        continue
-      fi
-
-      base_name=$(basename "$HEX_FILE" .hex)
-      BIN_FILE="$OUT_DIR/$base_name.bin"
-      OUT_FILE="$OUT_DIR/${base_name}_mod.csv"
-      EXPECTED_FILE="$GENERATED_EXPECTED_DIR/$base_name.expected.csv"
-
-      if [ ! -f "$BIN_FILE" ]; then
-        if command -v xxd >/dev/null 2>&1; then
-          xxd -r -p "$HEX_FILE" > "$BIN_FILE"
-        else
-          python3 "$TEST_DIR/hex_to_bin.py" "$HEX_FILE" "$BIN_FILE"
-        fi
-      fi
-
-      "$TEST_BIN_MOD" "$BIN_FILE" "$OUT_FILE"
-
-      if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
-        echo "Output differs from expected for $base_name in Moderate Optimization version:" >&2
-        exit 1
-      fi
-
-      mod_generated_count=$((mod_generated_count + 1))
-    done
-
-    mod_generated_end=$(python3 - <<'PY'
-import time
-print(time.time())
-PY
-)
-  fi
-
-  # Compile Aggressive Optimization (-O3) version and benchmark
-  echo ""
-  echo "Compiling Aggressive Optimization (-O3)..."
-  clang $OPT_FLAG_AGG -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_AGG_FILE"
-  clang $OPT_FLAG_AGG -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_AGG_FILE" -o "$TEST_BIN_AGG"
-
-  agg_generated_count=0
-  agg_generated_start=""
-  agg_generated_end=""
-
-  # Benchmark Aggressive Optimization on generated suite only
-  if [ -d "$GENERATED_DIR" ] && [ "$(ls -1 "$GENERATED_DIR" 2>/dev/null | wc -l)" -gt 0 ]; then
-    agg_generated_start=$(python3 - <<'PY'
-import time
-print(time.time())
-PY
-)
-
-    for HEX_FILE in "$GENERATED_DIR"/*.hex; do
-      if [ ! -e "$HEX_FILE" ]; then
-        continue
-      fi
-
-      base_name=$(basename "$HEX_FILE" .hex)
-      BIN_FILE="$OUT_DIR/$base_name.bin"
-      OUT_FILE="$OUT_DIR/${base_name}_agg.csv"
-      EXPECTED_FILE="$GENERATED_EXPECTED_DIR/$base_name.expected.csv"
-
-      "$TEST_BIN_AGG" "$BIN_FILE" "$OUT_FILE"
-
-      if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
-        echo "Output differs from expected for $base_name in Aggressive Optimization version:" >&2
-        exit 1
-      fi
-
-      agg_generated_count=$((agg_generated_count + 1))
-    done
-
-    agg_generated_end=$(python3 - <<'PY'
-import time
-print(time.time())
-PY
-)
-  fi
-
-  # Print comparison benchmark
-  if [ -n "$generated_start" ] && [ -n "$generated_end" ] && [ -n "$light_generated_start" ] && [ -n "$light_generated_end" ] && [ -n "$mod_generated_start" ] && [ -n "$mod_generated_end" ] && [ -n "$agg_generated_start" ] && [ -n "$agg_generated_end" ] && [ "$generated_count" -gt 0 ]; then
-    python3 "$TEST_DIR/benchmark_optimization_levels.py" "$generated_start" "$generated_end" "$light_generated_start" "$light_generated_end" "$mod_generated_start" "$mod_generated_end" "$agg_generated_start" "$agg_generated_end" "$generated_count" "$MESSAGE_COUNT"
-  fi
-fi
