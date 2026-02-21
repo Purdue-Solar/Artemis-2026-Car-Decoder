@@ -18,14 +18,14 @@
 struct message {
   time_t time_stamp;    /* 32 bit long */
   uint8_t battery_temp; /* Unsigned integer in Celsius */
-  uint8_t SOC;          /* Unsigned integer */
-  uint8_t limit;        /* Unsigned integer*/
+  uint8_t SOC;          /* Unsigned integer (0-100% charge of battery) */
+  uint8_t limit;        /* Unsigned integer */
   uint8_t diag_one;     /* Unsigned integer */
   uint8_t diag_two;     /* Unsigned integer */
-  float motor_curr;     /* B-float (uint16 left shift 16 cast into float)*/
+  float motor_curr;     /* B-float (Motor current draw) */
   float motor_vel;      /* B-float */
-  float sink;           /* B-float */
-  float temp;           /* B-float */
+  float sink;           /* B-float (Heat sink temperature in Celsius) */
+  float temp;           /* B-float (Unknown temperature in Celsius) */
   uint16_t oh_no_bits;  /* 2 bytes for "boolean" data */
 };
 
