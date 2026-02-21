@@ -171,7 +171,7 @@ int main(int argc, char *argv[]) {
   if (argc == 3) {
     in_file = fopen(argv[2], "rb");
     if (in_file == NULL) {
-      printf("Input file cannot be opened");
+      fprintf(stderr, "Input file cannot be opened");
     }
     return_code = FILE_READ_ERR;
     goto cleanup;
@@ -181,7 +181,7 @@ int main(int argc, char *argv[]) {
   }
   out_file = fopen(argv[1], "w");
   if (out_file == NULL) {
-    printf("Destination file cannot be written to (%s)", argv[1]);
+    fprintf(stderr, "Destination file cannot be written to (%s)", argv[1]);
     return_code = FILE_WRITE_ERR;
     goto cleanup;
   }
