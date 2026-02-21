@@ -3,12 +3,8 @@ Raw/*
 !Raw/
 Out/*
 !Out/
-Test/*
-!Test/
 Test_Out/*
 !Test_Out/
-Test_Expected/*
-!Test_Expected/
 
 .vscode
 
@@ -48,7 +44,6 @@ Test_Expected/*
 *.app
 *.i*86
 *.x86_64
-*.hex
 
 # Debug files
 *.dSYM/
