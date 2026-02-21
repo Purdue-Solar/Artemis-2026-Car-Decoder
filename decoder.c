@@ -29,7 +29,12 @@ int read_message_from_file(FILE *file, struct message *msg) {
   size_t bytes_read = fread(buffer, 1, MESSAGE_SIZE_IN_BYTES, file);
 
   if (bytes_read != MESSAGE_SIZE_IN_BYTES) {
-    fprintf(stderr, "Error: Expected 19 bytes, read %zu\n", bytes_read);
+    /* Only print error for partial reads, not clean EOF */
+    if (bytes_read > 0) {
+      fprintf(stderr,
+              "Error: Incomplete message, expected 19 bytes, read %zu\n",
+              bytes_read);
+    }
     return 1;
   }
 
@@ -117,6 +122,28 @@ void parse_status_flags(uint16_t bits, struct status_flags *flags) {
 } /* parse_status_flags() */
 
 /*
+ * Function Name: print_bool_array
+ * Prints an array of uint8_t values as boolean strings to a file
+ *
+ * Parameters:
+ *   file - the file to write to
+ *   values - pointer to array of uint8_t values (treated as booleans)
+ *   length - number of values to print
+ *   delimiter - string to use as separator between values
+ *
+ * Returns: void
+ */
+void print_bool_array(FILE *file, const uint8_t *values, size_t length,
+                      const char *delimiter) {
+  for (size_t i = 0; i < length; i++) {
+    fprintf(file, "%s", values[i] ? "True" : "False");
+    if (i < length - 1) {
+      fprintf(file, "%s", delimiter);
+    }
+  }
+} /* print_bool_array() */
+
+/*
  * Function Name: main
  * The entry point of the decoder.
  *
@@ -163,12 +190,15 @@ int main(int argc, char *argv[]) {
   struct message message_data = {0};
   int message_code = read_message_from_file(in_file, &message_data);
   while (message_code == 0) {
-    fprintf(out_file, "%ld,%u,%u,%u,%u,%u,%f,%f,%f,%f,%u\n",
+    fprintf(out_file, "%ld,%u,%u,%u,%u,%u,%f,%f,%f,%f,",
             message_data.time_stamp, message_data.battery_temp,
             message_data.SOC, message_data.limit, message_data.diag_one,
             message_data.diag_two, message_data.motor_curr,
-            message_data.motor_vel, message_data.sink, message_data.temp,
-            message_data.oh_no_bits);
+            message_data.motor_vel, message_data.sink, message_data.temp);
+    struct status_flags flags = {0};
+    parse_status_flags(message_data.oh_no_bits, &flags);
+    print_bool_array(out_file, &flags.regen, 12, ",");
+    fprintf(out_file, ",%u\n", flags.aux_condition);
     message_code = read_message_from_file(in_file, &message_data);
   }
 

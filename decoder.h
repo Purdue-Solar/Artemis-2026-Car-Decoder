@@ -15,7 +15,7 @@
 
 #define MESSAGE_SIZE_IN_BYTES (19)
 
-struct status_flags {
+struct status_flags {              /* ORDER IS IMPORTANT */
   uint8_t regen;                   /* Bit 0: Regenerative braking active */
   uint8_t cruise_down;             /* Bit 1: Cruise control decrease */
   uint8_t cruise_up;               /* Bit 2: Cruise control increase */
@@ -48,6 +48,8 @@ struct message {
 int read_message_from_file(FILE *file, struct message *msg);
 float convert_to_b_float(uint16_t data);
 void parse_status_flags(uint16_t bits, struct status_flags *flags);
+void print_bool_array(FILE *file, const uint8_t *values, size_t length,
+                      const char *delimiter);
 int main(int argc, char *argv[]);
 
 #endif /* DECODER_H */
