@@ -5,6 +5,10 @@ Out/*
 !Out/
 Test_Out/*
 !Test_Out/
+Test_Generated/*
+!Test_Generated/
+Test_Generated_Expected/*
+!Test_Generated_Expected/
 
 .vscode
 
@@ -44,6 +48,7 @@ Test_Out/*
 *.app
 *.i*86
 *.x86_64
+*.hex
 
 # Debug files
 *.dSYM/

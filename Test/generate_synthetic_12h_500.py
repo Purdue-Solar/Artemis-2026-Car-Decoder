@@ -1,14 +1,12 @@
+import argparse
 import math
-import os
 import random
-from datetime import datetime, timedelta, timezone
 import struct
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-root = "/Users/nansonchen/GitHub/Artemis-2026-Car-Decoder"
-out_path = os.path.join(root, "Test", "synthetic_12h_500.hex")
-expected_path = os.path.join(root, "Test_Expected", "synthetic_12h_500.expected.csv")
-
-random.seed(2026)
+script_dir = Path(__file__).resolve().parent
+root = script_dir.parent
 
 message_count = 500
 start = datetime(2026, 2, 21, 8, 0, 0, tzinfo=timezone.utc)
@@ -25,6 +23,35 @@ def bfloat16_to_float(value: int) -> float:
     bits = (value & 0xFFFF) << 16
     return struct.unpack(">f", struct.pack(">I", bits))[0]
 
+
+parser = argparse.ArgumentParser(
+    description="Generate synthetic CAN hex and expected CSV data."
+)
+parser.add_argument("name", help="Base file name (without extension)")
+parser.add_argument("seed", type=int, help="Random seed (integer)")
+parser.add_argument(
+    "--hex-dir",
+    default=str(root / "Test_Generated"),
+    help="Directory for generated .hex files",
+)
+parser.add_argument(
+    "--expected-dir",
+    default=str(root / "Test_Generated_Expected"),
+    help="Directory for generated .expected.csv files",
+)
+args = parser.parse_args()
+
+if args.seed < 0:
+    raise ValueError("Seed must be a non-negative integer")
+
+random.seed(args.seed)
+
+hex_dir = Path(args.hex_dir)
+expected_dir = Path(args.expected_dir)
+hex_dir.mkdir(parents=True, exist_ok=True)
+expected_dir.mkdir(parents=True, exist_ok=True)
+out_path = hex_dir / f"{args.name}.hex"
+expected_path = expected_dir / f"{args.name}.expected.csv"
 
 lines = []
 expected_lines = []
