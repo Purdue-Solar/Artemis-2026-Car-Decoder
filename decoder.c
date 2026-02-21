@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 /*
  * Function Name: read_message_from_file
@@ -75,17 +76,18 @@ int read_message_from_file(FILE *file, struct message *msg) {
 
 /*
  * Function Name: convert_to_b_float
- * Converts a 16 bit integer into a b float
+ * Converts a 16 bit bfloat16 value into a 32 bit float
  *
  * Parameters:
- *   data - is the 16 bit integer to convert
+ *   data - is the 16 bit bfloat16 value to convert
  *
- * Returns: the b float
+ * Returns: the 32 bit float representation
  */
 float convert_to_b_float(uint16_t data) {
-  uint32_t upcast_data = data;
-  upcast_data = upcast_data << 16;
-  return ((float)upcast_data);
+  uint32_t bits = ((uint32_t)data) << 16;
+  float result;
+  memcpy(&result, &bits, sizeof(float));
+  return result;
 }
 
 /*
