@@ -1,3 +1,4 @@
+/*
 #ifndef BUFFER_H
 #define BUFFER_H
 
@@ -19,3 +20,4 @@ int buffer_write(Buffer *buffer, const uint8_t *data, size_t data_len);
 int buffer_read(Buffer *buffer, uint8_t *data, size_t data_len);
 
 #endif
+*/
