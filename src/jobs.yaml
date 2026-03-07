@@ -1,0 +1,10 @@
+jobs:
+  Nanson:
+    c_files:
+      - decoder.c
+      - decoder.h
+  Daniel:
+    c_files:
+      - main.c
+      - can_decode.c
+      - buffer.c

@@ -15,102 +15,107 @@ MESSAGE_COUNT=500
 MESSAGE_SIZE_BYTES=19
 SEED_RETRY_LIMIT=100
 THREADS=4
+
 TEST_DIR_NAME="Test"
 EXPECTED_DIR_NAME="Test_Expected"
 GENERATED_DIR_NAME="Test_Generated"
 GENERATED_EXPECTED_DIR_NAME="Test_Generated_Expected"
 OUT_DIR_NAME="Test_Out"
 SCRIPT_DIR_NAME="Test_Scripts"
+TARGET_DIR_NAME="target"
+BUILD_DIR_NAME="decoder-tests"
+
 GENERATED_SEED_FILE_NAME="generated_seeds.txt"
 GENERATOR_SCRIPT_NAME="generate_synthetic_12h_500.py"
 HEX_TO_BIN_SCRIPT_NAME="hex_to_bin.py"
 SYNTHETIC_NAME_PREFIX="synthetic_12h_500_"
-DECODER_SOURCE_NAME="src/main.c"
 TEST_SOURCE_NAME="test_decoder.c"
-OBJ_FILE_NAME="main.o"
-TEST_BIN_NAME="decoder_test"
-SUPPORT_OBJ_FILE_NAME="decoder_support.o"
-SUPPORT_CAN_OBJ_FILE_NAME="can_decode_support.o"
-OBJ_LIGHT_FILE_NAME="decoder_light.o"
-TEST_BIN_LIGHT_NAME="decoder_test_light"
-SUPPORT_OBJ_LIGHT_FILE_NAME="decoder_support_light.o"
-SUPPORT_CAN_OBJ_LIGHT_FILE_NAME="can_decode_support_light.o"
-OBJ_MOD_FILE_NAME="decoder_mod.o"
-TEST_BIN_MOD_NAME="decoder_test_mod"
-SUPPORT_OBJ_MOD_FILE_NAME="decoder_support_mod.o"
-SUPPORT_CAN_OBJ_MOD_FILE_NAME="can_decode_support_mod.o"
-OBJ_AGG_FILE_NAME="decoder_agg.o"
-TEST_BIN_AGG_NAME="decoder_test_agg"
-SUPPORT_OBJ_AGG_FILE_NAME="decoder_support_agg.o"
-SUPPORT_CAN_OBJ_AGG_FILE_NAME="can_decode_support_agg.o"
+
 OPT_FLAG_LIGHT="-O1"
 OPT_FLAG_MOD="-O2"
 OPT_FLAG_AGG="-O3"
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+TEST_DIR="$ROOT_DIR/$TEST_DIR_NAME"
+EXPECTED_DIR="$ROOT_DIR/$EXPECTED_DIR_NAME"
+GENERATED_DIR="$ROOT_DIR/$GENERATED_DIR_NAME"
+GENERATED_EXPECTED_DIR="$ROOT_DIR/$GENERATED_EXPECTED_DIR_NAME"
+OUT_DIR="$ROOT_DIR/$OUT_DIR_NAME"
+SCRIPT_DIR="$ROOT_DIR/$SCRIPT_DIR_NAME"
+TARGET_DIR="$ROOT_DIR/$TARGET_DIR_NAME"
+BUILD_DIR="$TARGET_DIR/$BUILD_DIR_NAME"
+BUILD_OBJ_DIR="$BUILD_DIR/obj"
+BUILD_BIN_DIR="$BUILD_DIR/bin"
+INCLUDE_DIR="$ROOT_DIR/include"
+TEST_SOURCE_PATH="$SCRIPT_DIR/$TEST_SOURCE_NAME"
+GENERATOR_SCRIPT_PATH="$SCRIPT_DIR/$GENERATOR_SCRIPT_NAME"
+HEX_TO_BIN_SCRIPT_PATH="$SCRIPT_DIR/$HEX_TO_BIN_SCRIPT_NAME"
 
-root_path() {
-  local relative_path="${1#./}"
-  relative_path="${relative_path#/}"
-  echo "$ROOT_DIR/$relative_path"
-}
+JOBS_FILE="$BUILD_DIR/discovered_jobs.tsv"
+BIN_MAP_FILE="$BUILD_DIR/job_bins.tsv"
+HARDCODED_NAMES_FILE="$BUILD_DIR/hardcoded_hex_names.txt"
+SYNTH_NAMES_FILE="$BUILD_DIR/synthetic_hex_names.txt"
+BENCHMARK_RESULTS_FILE="$BUILD_DIR/benchmark_results.tsv"
 
-TEST_DIR=$(root_path "$TEST_DIR_NAME")
-EXPECTED_DIR=$(root_path "$EXPECTED_DIR_NAME")
-GENERATED_DIR=$(root_path "$GENERATED_DIR_NAME")
-GENERATED_EXPECTED_DIR=$(root_path "$GENERATED_EXPECTED_DIR_NAME")
-OUT_DIR=$(root_path "$OUT_DIR_NAME")
-SCRIPT_DIR=$(root_path "$SCRIPT_DIR_NAME")
-INCLUDE_DIR=$(root_path "include")
-DECODER_SOURCE_PATH=$(root_path "$DECODER_SOURCE_NAME")
-DECODER_SOURCE_REL_PATH="${DECODER_SOURCE_NAME#./}"
-DECODER_SOURCE_REL_PATH="${DECODER_SOURCE_REL_PATH#/}"
-TEST_SOURCE_PATH=$(root_path "$TEST_DIR_NAME/$TEST_SOURCE_NAME")
-GENERATOR_SCRIPT_PATH=$(root_path "$SCRIPT_DIR_NAME/$GENERATOR_SCRIPT_NAME")
-HEX_TO_BIN_SCRIPT_PATH=$(root_path "$SCRIPT_DIR_NAME/$HEX_TO_BIN_SCRIPT_NAME")
-CORE_DECODER_SOURCE_PATH=$(root_path "src/decoder.c")
-CAN_DECODE_SOURCE_PATH=$(root_path "src/can_decode.c")
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
 
-DECODER_SOURCE_DIR=$(dirname "$DECODER_SOURCE_PATH")
-CLANG_INCLUDE_FLAGS=(-I"$ROOT_DIR" -I"$DECODER_SOURCE_DIR" -I"$INCLUDE_DIR")
-OBJ_FILE="$OUT_DIR/$OBJ_FILE_NAME"
-TEST_BIN="$OUT_DIR/$TEST_BIN_NAME"
-SUPPORT_OBJ_FILE="$OUT_DIR/$SUPPORT_OBJ_FILE_NAME"
-SUPPORT_CAN_OBJ_FILE="$OUT_DIR/$SUPPORT_CAN_OBJ_FILE_NAME"
-OBJ_LIGHT_FILE="$OUT_DIR/$OBJ_LIGHT_FILE_NAME"
-TEST_BIN_LIGHT="$OUT_DIR/$TEST_BIN_LIGHT_NAME"
-SUPPORT_OBJ_LIGHT_FILE="$OUT_DIR/$SUPPORT_OBJ_LIGHT_FILE_NAME"
-SUPPORT_CAN_OBJ_LIGHT_FILE="$OUT_DIR/$SUPPORT_CAN_OBJ_LIGHT_FILE_NAME"
-OBJ_MOD_FILE="$OUT_DIR/$OBJ_MOD_FILE_NAME"
-TEST_BIN_MOD="$OUT_DIR/$TEST_BIN_MOD_NAME"
-SUPPORT_OBJ_MOD_FILE="$OUT_DIR/$SUPPORT_OBJ_MOD_FILE_NAME"
-SUPPORT_CAN_OBJ_MOD_FILE="$OUT_DIR/$SUPPORT_CAN_OBJ_MOD_FILE_NAME"
-OBJ_AGG_FILE="$OUT_DIR/$OBJ_AGG_FILE_NAME"
-TEST_BIN_AGG="$OUT_DIR/$TEST_BIN_AGG_NAME"
-SUPPORT_OBJ_AGG_FILE="$OUT_DIR/$SUPPORT_OBJ_AGG_FILE_NAME"
-SUPPORT_CAN_OBJ_AGG_FILE="$OUT_DIR/$SUPPORT_CAN_OBJ_AGG_FILE_NAME"
+MAIN_WORKFLOW=$(cat <<'EOF'
+validate_required_inputs
+prepare_output_dirs
 
-if [ ! -f "$DECODER_SOURCE_PATH" ]; then
-  echo "ERROR: Decoder source not found at $DECODER_SOURCE_PATH"
-  exit 1
+log "Cleaning up test directories..."
+cleanup_previous_outputs
+
+log "Discovering job definitions from YAML..."
+discover_jobs_from_yaml "$ROOT_DIR" "$JOBS_FILE"
+require_non_empty_file "$JOBS_FILE" "No valid jobs discovered. Add at least one YAML file with jobs."
+log "Discovered $(wc -l < "$JOBS_FILE" | tr -d ' ') job(s)."
+
+log "Compiling all jobs with all optimization levels..."
+compile_all_jobs
+log "Compilation complete."
+
+log "Converting hardcoded test hex files to binary..."
+convert_hex_directory "$TEST_DIR"
+collect_hex_basenames "$TEST_DIR" "$HARDCODED_NAMES_FILE"
+
+log "Running hardcoded tests for all jobs..."
+run_tests_for_name_list "$HARDCODED_NAMES_FILE"
+
+log "Validating hardcoded test outputs..."
+validate_outputs_for_name_list "$HARDCODED_NAMES_FILE" "$EXPECTED_DIR" "hardcoded"
+
+if [ "$NUM_SYNTHETIC_TESTS" -gt 0 ]; then
+  log "Generating $NUM_SYNTHETIC_TESTS synthetic test cases..."
+  generate_synthetic_tests
+  log "Synthetic test generation complete."
+
+  log "Converting synthetic test hex files to binary..."
+  convert_hex_directory "$GENERATED_DIR"
+  collect_hex_basenames "$GENERATED_DIR" "$SYNTH_NAMES_FILE"
+
+  log "Running synthetic tests for all jobs..."
+  run_tests_for_name_list "$SYNTH_NAMES_FILE"
+
+  log "Validating synthetic outputs..."
+  validate_outputs_for_name_list "$SYNTH_NAMES_FILE" "$GENERATED_EXPECTED_DIR" "synthetic"
+
+  log "Running benchmarks..."
+  benchmark_all_jobs "$SYNTH_NAMES_FILE"
+  print_benchmark_results
 fi
 
-if [ ! -f "$TEST_SOURCE_PATH" ]; then
-  echo "ERROR: Test source not found at $TEST_SOURCE_PATH"
-  exit 1
-fi
+log "All tests passed!"
+EOF
+)
 
-if [ ! -f "$GENERATOR_SCRIPT_PATH" ]; then
-  echo "ERROR: Generator script not found at $GENERATOR_SCRIPT_PATH"
-  exit 1
-fi
 
-if [ ! -f "$HEX_TO_BIN_SCRIPT_PATH" ]; then
-  echo "ERROR: Hex to bin script not found at $HEX_TO_BIN_SCRIPT_PATH"
-  exit 1
-fi
+# ============================================================================
+# FUNCTIONS
+# ============================================================================
 
-# Logging helper
 log() {
   if [ "$QUIET" -eq 0 ]; then
     echo "$@"
@@ -121,72 +126,430 @@ log_always() {
   echo "$@"
 }
 
-# Wait until number of running background jobs is below THREADS
 wait_for_slot() {
   while [ "$(jobs -rp | wc -l | tr -d ' ')" -ge "$THREADS" ]; do
     sleep 0.05
   done
 }
 
-# Wait for all background jobs
 wait_for_all_jobs() {
   wait
 }
 
-# ============================================================================
-# STEP 1: CLEAN UP TEST DIRECTORIES
-# ============================================================================
-log "Cleaning up test directories..."
-mkdir -p "$OUT_DIR" "$GENERATED_DIR" "$GENERATED_EXPECTED_DIR"
-rm -f "$OUT_DIR"/*.o "$OUT_DIR"/"$TEST_BIN_NAME"* "$OUT_DIR"/*.bin "$OUT_DIR"/*.csv
-rm -f "$GENERATED_DIR"/*.hex "$GENERATED_EXPECTED_DIR"/*.expected.csv
+require_non_empty_file() {
+  file_path="$1"
+  message="$2"
+  if [ ! -s "$file_path" ]; then
+    log_always "ERROR: $message"
+    exit 1
+  fi
+}
 
-# ============================================================================
-# STEP 2: GENERATE SYNTHETIC TEST DATA
-# ============================================================================
-USED_SEEDS_FILE="$OUT_DIR/$GENERATED_SEED_FILE_NAME"
-> "$USED_SEEDS_FILE"
+validate_required_inputs() {
+  if [ ! -d "$TEST_DIR" ]; then
+    log_always "ERROR: Test directory not found at $TEST_DIR"
+    exit 1
+  fi
+  if [ ! -d "$EXPECTED_DIR" ]; then
+    log_always "ERROR: Expected directory not found at $EXPECTED_DIR"
+    exit 1
+  fi
+  if [ ! -f "$TEST_SOURCE_PATH" ]; then
+    log_always "ERROR: Test source not found at $TEST_SOURCE_PATH"
+    exit 1
+  fi
+  if [ ! -f "$GENERATOR_SCRIPT_PATH" ]; then
+    log_always "ERROR: Generator script not found at $GENERATOR_SCRIPT_PATH"
+    exit 1
+  fi
+  if [ ! -f "$HEX_TO_BIN_SCRIPT_PATH" ]; then
+    log_always "ERROR: Hex to bin script not found at $HEX_TO_BIN_SCRIPT_PATH"
+    exit 1
+  fi
+}
 
-if [ "$NUM_SYNTHETIC_TESTS" -gt 0 ]; then
-  log "Generating $NUM_SYNTHETIC_TESTS synthetic test cases..."
+prepare_output_dirs() {
+  mkdir -p "$OUT_DIR" "$GENERATED_DIR" "$GENERATED_EXPECTED_DIR" "$BUILD_OBJ_DIR" "$BUILD_BIN_DIR"
+}
+
+cleanup_previous_outputs() {
+  rm -f "$OUT_DIR"/*.bin
+  rm -f "$OUT_DIR"/*.csv
+  rm -f "$BUILD_DIR"/*.tsv
+  rm -f "$BUILD_DIR"/*.txt
+  rm -rf "$BUILD_OBJ_DIR"
+  rm -rf "$BUILD_BIN_DIR"
+  mkdir -p "$BUILD_OBJ_DIR" "$BUILD_BIN_DIR"
+  rm -f "$GENERATED_DIR"/*.hex
+  rm -f "$GENERATED_EXPECTED_DIR"/*.expected.csv
+}
+
+discover_jobs_from_yaml() {
+  search_root="$1"
+  output_file="$2"
+
+  python3 - "$search_root" > "$output_file" <<'PY'
+import os
+import re
+import sys
+
+root = os.path.abspath(sys.argv[1])
+
+def warn(msg):
+    sys.stderr.write("WARN: " + msg + "\n")
+
+def parse_minimal_yaml(text):
+    jobs = {}
+    in_jobs = False
+    current_job = None
+    current_key = None
+    for raw_line in text.splitlines():
+        line = raw_line.split('#', 1)[0].rstrip()
+        if not line.strip():
+            continue
+        if not in_jobs:
+            if re.match(r'^jobs\s*:\s*$', line):
+                in_jobs = True
+            continue
+        if re.match(r'^\S', line):
+            break
+
+        m_job = re.match(r'^\s{2}([A-Za-z0-9_.:-]+)\s*:\s*$', line)
+        if m_job:
+            current_job = m_job.group(1)
+            jobs[current_job] = {}
+            current_key = None
+            continue
+
+        m_key = re.match(r'^\s{4}(c_files|files|sources)\s*:\s*(.*)$', line)
+        if m_key and current_job is not None:
+            key = m_key.group(1)
+            value = m_key.group(2).strip()
+            current_key = key
+            if not value:
+                jobs[current_job][key] = []
+            else:
+                if value.startswith('[') and value.endswith(']'):
+                    inside = value[1:-1].strip()
+                    items = [x.strip().strip('"\'') for x in inside.split(',') if x.strip()]
+                    jobs[current_job][key] = items
+                else:
+                    jobs[current_job][key] = value.strip('"\'')
+            continue
+
+        m_item = re.match(r'^\s{6}-\s*(.+)$', line)
+        if m_item and current_job is not None and current_key is not None:
+            item = m_item.group(1).strip().strip('"\'')
+            existing = jobs[current_job].get(current_key)
+            if isinstance(existing, list):
+                existing.append(item)
+            elif existing is None:
+                jobs[current_job][current_key] = [item]
+            else:
+                jobs[current_job][current_key] = [str(existing), item]
+    return {"jobs": jobs}
+
+def extract_jobs(data):
+    if not isinstance(data, dict):
+        return []
+    jobs = data.get("jobs")
+    out = []
+    if isinstance(jobs, dict):
+        for job_name, cfg in jobs.items():
+            out.append((str(job_name), cfg))
+    elif isinstance(jobs, list):
+        idx = 0
+        for item in jobs:
+            idx += 1
+            if isinstance(item, dict):
+                job_name = item.get("name")
+                if not job_name:
+                    job_name = f"job_{idx}"
+                out.append((str(job_name), item))
+    return out
+
+def extract_c_files(cfg):
+    if isinstance(cfg, dict):
+        for key in ("c_files", "files", "sources", "cFiles"):
+            if key in cfg:
+                value = cfg[key]
+                break
+        else:
+            return []
+    elif isinstance(cfg, list):
+        value = cfg
+    elif isinstance(cfg, str):
+        value = cfg
+    else:
+        return []
+
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        files = []
+        for v in value:
+            if isinstance(v, str):
+                files.append(v)
+        return files
+    return []
+
+def normalize_job_files(job_dir, requested):
+    dir_c_files = sorted(
+        [name for name in os.listdir(job_dir)
+         if name.endswith('.c') and os.path.isfile(os.path.join(job_dir, name))]
+    )
+    if not requested:
+        return []
+
+    expanded = []
+    for item in requested:
+        token = item.strip()
+        if token.lower() == "all":
+            expanded.extend(dir_c_files)
+        else:
+            expanded.append(token)
+
+    result = []
+    seen = set()
+    for item in expanded:
+        path = os.path.join(job_dir, item)
+        if os.path.isfile(path) and item.endswith('.c'):
+            if item not in seen:
+                seen.add(item)
+                result.append(item)
+        else:
+            warn(f"Skipping missing/non-C file '{item}' in {job_dir}")
+    return result
+
+def parse_yaml_file(path):
+    text = open(path, "r", encoding="utf-8").read()
+    try:
+        import yaml  # type: ignore
+        return yaml.safe_load(text)
+    except Exception:
+        return parse_minimal_yaml(text)
+
+records = []
+for dirpath, dirnames, filenames in os.walk(root):
+    dirnames[:] = [d for d in dirnames if d != ".git"]
+    for name in filenames:
+        if not name.endswith('.yaml'):
+            continue
+        yaml_path = os.path.join(dirpath, name)
+        try:
+            data = parse_yaml_file(yaml_path)
+        except Exception as ex:
+            warn(f"Failed to parse {yaml_path}: {ex}")
+            continue
+
+        jobs = extract_jobs(data)
+        if not jobs:
+            continue
+
+        dir_name = os.path.basename(dirpath.rstrip(os.sep)) or "."
+        for job_name, cfg in jobs:
+            requested_files = extract_c_files(cfg)
+            c_files = normalize_job_files(dirpath, requested_files)
+            if not c_files:
+                warn(f"Skipping empty job '{job_name}' in {yaml_path}")
+                continue
+            job_id = f"{dir_name}:{job_name}"
+            records.append((job_id, dirpath, dir_name, job_name, ",".join(c_files)))
+
+records.sort(key=lambda r: (r[2], r[3]))
+for rec in records:
+    print("\t".join(rec))
+PY
+}
+
+sanitize_name() {
+  echo "$1" | tr -c 'A-Za-z0-9_.-' '_'
+}
+
+compile_all_jobs() {
+  : > "$BIN_MAP_FILE"
+
+  while IFS=$'\t' read -r job_id job_dir dir_name job_name source_csv; do
+    [ -n "$job_id" ] || continue
+    job_safe=$(sanitize_name "$job_id")
+    dir_safe=$(sanitize_name "$dir_name")
+    name_safe=$(sanitize_name "$job_name")
+
+    compile_job_variant "$job_id" "$job_dir" "$source_csv" "" "" "Unoptimized" "$job_safe" "$dir_safe" "$name_safe"
+    compile_job_variant "$job_id" "$job_dir" "$source_csv" "$OPT_FLAG_LIGHT" "_light" "Light -O1" "$job_safe" "$dir_safe" "$name_safe"
+    compile_job_variant "$job_id" "$job_dir" "$source_csv" "$OPT_FLAG_MOD" "_mod" "Moderate -O2" "$job_safe" "$dir_safe" "$name_safe"
+    compile_job_variant "$job_id" "$job_dir" "$source_csv" "$OPT_FLAG_AGG" "_agg" "Aggressive -O3" "$job_safe" "$dir_safe" "$name_safe"
+  done < "$JOBS_FILE"
+}
+
+compile_job_variant() {
+  job_id="$1"
+  job_dir="$2"
+  source_csv="$3"
+  opt_flag="$4"
+  suffix="$5"
+  variant_label="$6"
+  job_safe="$7"
+  dir_safe="$8"
+  name_safe="$9"
+
+  include_flags=(-I"$ROOT_DIR" -I"$job_dir" -I"$INCLUDE_DIR")
+  if [ -n "$opt_flag" ]; then
+    compile_flags=("$opt_flag" "${include_flags[@]}")
+  else
+    compile_flags=("${include_flags[@]}")
+  fi
+
+  job_obj_dir="$BUILD_OBJ_DIR/$dir_safe/$name_safe"
+  job_bin_dir="$BUILD_BIN_DIR/$dir_safe/$name_safe"
+  mkdir -p "$job_obj_dir" "$job_bin_dir"
+
+  test_obj="$job_obj_dir/${job_safe}${suffix}_test.o"
+  clang "${compile_flags[@]}" -c "$TEST_SOURCE_PATH" -o "$test_obj"
+
+  obj_files=()
+  old_ifs="$IFS"
+  IFS=','
+  for src_file in $source_csv; do
+    src_path="$job_dir/$src_file"
+    if [ ! -f "$src_path" ]; then
+      log_always "ERROR: $job_id: Missing source file $src_path"
+      exit 1
+    fi
+    src_base=$(basename "$src_file" .c)
+    src_safe=$(sanitize_name "$src_base")
+    obj_file="$job_obj_dir/${job_safe}${suffix}_${src_safe}.o"
+
+    # Rename decoder-side main symbols so test harness main remains the entrypoint.
+    clang "${compile_flags[@]}" -Dmain=decoder_source_main -c "$src_path" -o "$obj_file"
+    obj_files+=("$obj_file")
+  done
+  IFS="$old_ifs"
+
+  bin_path="$job_bin_dir/job_bin_${job_safe}${suffix}"
+  clang "${compile_flags[@]}" "$test_obj" "${obj_files[@]}" -o "$bin_path"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$job_id" "$job_safe" "$variant_label" "$suffix" "$bin_path" >> "$BIN_MAP_FILE"
+}
+
+convert_hex_directory() {
+  hex_dir="$1"
+  for hex_file in "$hex_dir"/*.hex; do
+    if [ ! -e "$hex_file" ]; then
+      continue
+    fi
+    base_name=$(basename "$hex_file" .hex)
+    bin_file="$OUT_DIR/$base_name.bin"
+    if command -v xxd >/dev/null 2>&1; then
+      xxd -r -p "$hex_file" > "$bin_file"
+    else
+      python3 "$HEX_TO_BIN_SCRIPT_PATH" "$hex_file" "$bin_file"
+    fi
+  done
+}
+
+collect_hex_basenames() {
+  hex_dir="$1"
+  out_file="$2"
+  : > "$out_file"
+  for hex_file in "$hex_dir"/*.hex; do
+    if [ ! -e "$hex_file" ]; then
+      continue
+    fi
+    basename "$hex_file" .hex >> "$out_file"
+  done
+}
+
+run_tests_for_name_list() {
+  names_file="$1"
+  while IFS=$'\t' read -r job_id job_safe variant_label suffix bin_path; do
+    [ -n "$job_id" ] || continue
+    while IFS= read -r base_name; do
+      [ -n "$base_name" ] || continue
+      bin_input="$OUT_DIR/$base_name.bin"
+      out_file="$OUT_DIR/${job_safe}_${base_name}${suffix}.csv"
+      wait_for_slot
+      "$bin_path" "$bin_input" "$out_file" &
+    done < "$names_file"
+    wait_for_all_jobs
+  done < "$BIN_MAP_FILE"
+}
+
+validate_outputs_for_name_list() {
+  names_file="$1"
+  expected_base_dir="$2"
+  phase_label="$3"
+
+  while IFS=$'\t' read -r job_id job_safe variant_label suffix bin_path; do
+    [ -n "$job_id" ] || continue
+    while IFS= read -r base_name; do
+      [ -n "$base_name" ] || continue
+      expected_file="$expected_base_dir/$base_name.expected.csv"
+      out_file="$OUT_DIR/${job_safe}_${base_name}${suffix}.csv"
+
+      if [ ! -f "$expected_file" ]; then
+        log_always "ERROR: $job_id: Missing expected output for $phase_label test: $expected_file"
+        exit 1
+      fi
+      if [ ! -f "$out_file" ]; then
+        log_always "ERROR: $job_id: Missing produced output for $phase_label test: $out_file"
+        exit 1
+      fi
+
+      if ! cmp -s "$expected_file" "$out_file"; then
+        log_always "ERROR: $job_id: $variant_label: Output differs from expected for $base_name"
+        log_always "Red is expected, Green is actual:"
+        git diff --no-index -- "$expected_file" "$out_file" || true
+        exit 1
+      fi
+    done < "$names_file"
+  done < "$BIN_MAP_FILE"
+}
+
+generate_synthetic_tests() {
+  used_seeds_file="$OUT_DIR/$GENERATED_SEED_FILE_NAME"
+  : > "$used_seeds_file"
+
   i=0
   gen_start_time=$(python3 -c "import time; print(time.time())")
   last_update_time="$gen_start_time"
-  UPDATE_INTERVAL=2
-  
+  update_interval=2
+
   while [ "$i" -lt "$NUM_SYNTHETIC_TESTS" ]; do
     seed="$RANDOM"
     attempts=0
-    while grep -qx "$seed" "$USED_SEEDS_FILE"; do
+
+    while grep -qx "$seed" "$used_seeds_file"; do
       seed="$RANDOM"
       attempts=$((attempts + 1))
       if [ "$attempts" -ge "$SEED_RETRY_LIMIT" ]; then
-        > "$USED_SEEDS_FILE"
+        : > "$used_seeds_file"
         for hex_file in "$GENERATED_DIR"/"$SYNTHETIC_NAME_PREFIX"*.hex; do
           if [ -f "$hex_file" ]; then
             basename_only=$(basename "$hex_file" .hex)
             extracted_seed="${basename_only#$SYNTHETIC_NAME_PREFIX}"
-            echo "$extracted_seed" >> "$USED_SEEDS_FILE"
+            echo "$extracted_seed" >> "$used_seeds_file"
           fi
         done
         attempts=0
       fi
     done
-    echo "$seed" >> "$USED_SEEDS_FILE"
+
+    echo "$seed" >> "$used_seeds_file"
     name="$SYNTHETIC_NAME_PREFIX$seed"
-    
+
     python3 "$GENERATOR_SCRIPT_PATH" \
       "$name" "$seed" \
       --hex-dir "$GENERATED_DIR" \
       --expected-dir "$GENERATED_EXPECTED_DIR" > /dev/null 2>&1
+
     i=$((i + 1))
-    
+
     if [ "$QUIET" -eq 0 ]; then
       read current_time should_update eta <<EOF
 $(python3 - <<PY
 import time
 current = time.time()
-should_update = current - $last_update_time >= $UPDATE_INTERVAL or $i >= $NUM_SYNTHETIC_TESTS
+should_update = current - $last_update_time >= $update_interval or $i >= $NUM_SYNTHETIC_TESTS
 if should_update and $i > 0:
     elapsed = current - $gen_start_time
     avg_time = elapsed / $i
@@ -204,263 +567,77 @@ else:
 PY
 )
 EOF
-      
+
       if [ "$should_update" = "1" ]; then
         printf "\rGenerating synthetic test %d of %d (ETA: %s)...  " "$i" "$NUM_SYNTHETIC_TESTS" "${eta:-}"
         last_update_time="$current_time"
       fi
     fi
   done
-  
+
   if [ "$QUIET" -eq 0 ]; then
     echo ""
   fi
-  log "Synthetic test generation complete."
-fi
-
-# ============================================================================
-# STEP 3: COMPILE ALL OPTIMIZATION LEVELS
-# ============================================================================
-
-compile_variant() {
-  local opt_flag="$1"
-  local primary_obj="$2"
-  local support_obj="$3"
-  local support_can_obj="$4"
-  local output_bin="$5"
-
-  local compile_flags=("${CLANG_INCLUDE_FLAGS[@]}")
-  if [ -n "$opt_flag" ]; then
-    compile_flags=("$opt_flag" "${compile_flags[@]}")
-  fi
-
-  clang "${compile_flags[@]}" -Dmain=decoder_source_main -c "$DECODER_SOURCE_PATH" -o "$primary_obj"
-
-  local link_objects=("$primary_obj")
-
-  if [ "$DECODER_SOURCE_REL_PATH" != "src/decoder.c" ]; then
-    if [ ! -f "$CORE_DECODER_SOURCE_PATH" ]; then
-      log_always "ERROR: Required decoder source not found at $CORE_DECODER_SOURCE_PATH"
-      exit 1
-    fi
-    clang "${compile_flags[@]}" -Dmain=decoder_main -c "$CORE_DECODER_SOURCE_PATH" -o "$support_obj"
-    link_objects+=("$support_obj")
-  fi
-
-  if [ "$DECODER_SOURCE_REL_PATH" = "src/main.c" ]; then
-    if [ ! -f "$CAN_DECODE_SOURCE_PATH" ]; then
-      log_always "ERROR: Required CAN decoder source not found at $CAN_DECODE_SOURCE_PATH"
-      exit 1
-    fi
-    clang "${compile_flags[@]}" -c "$CAN_DECODE_SOURCE_PATH" -o "$support_can_obj"
-    link_objects+=("$support_can_obj")
-  fi
-
-  clang "${compile_flags[@]}" "$TEST_SOURCE_PATH" "${link_objects[@]}" -o "$output_bin"
 }
 
-log "Compiling decoder with all optimization levels..."
-compile_variant "" "$OBJ_FILE" "$SUPPORT_OBJ_FILE" "$SUPPORT_CAN_OBJ_FILE" "$TEST_BIN"
-compile_variant "$OPT_FLAG_LIGHT" "$OBJ_LIGHT_FILE" "$SUPPORT_OBJ_LIGHT_FILE" "$SUPPORT_CAN_OBJ_LIGHT_FILE" "$TEST_BIN_LIGHT"
-compile_variant "$OPT_FLAG_MOD" "$OBJ_MOD_FILE" "$SUPPORT_OBJ_MOD_FILE" "$SUPPORT_CAN_OBJ_MOD_FILE" "$TEST_BIN_MOD"
-compile_variant "$OPT_FLAG_AGG" "$OBJ_AGG_FILE" "$SUPPORT_OBJ_AGG_FILE" "$SUPPORT_CAN_OBJ_AGG_FILE" "$TEST_BIN_AGG"
+benchmark_all_jobs() {
+  names_file="$1"
+  : > "$BENCHMARK_RESULTS_FILE"
 
-log "Compilation complete."
+  while IFS=$'\t' read -r job_id job_safe variant_label suffix bin_path; do
+    [ -n "$job_id" ] || continue
 
-# ============================================================================
-# STEP 4: BENCHMARK ALL OPTIMIZATION LEVELS
-# ============================================================================
-log "Running benchmarks..."
+    benchmark_start=$(python3 -c "import time; print(time.time())")
+    file_count=0
+    total_messages=0
 
-# Convert hex files to binary (do this once, reuse for all optimization levels)
-log "Converting hex files to binary..."
-for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
-  for HEX_FILE in "$HEX_DIR"/*.hex; do
-    if [ ! -e "$HEX_FILE" ]; then
-      continue
-    fi
-    
-    base_name=$(basename "$HEX_FILE" .hex)
-    BIN_FILE="$OUT_DIR/$base_name.bin"
-    
-    if command -v xxd >/dev/null 2>&1; then
-      xxd -r -p "$HEX_FILE" > "$BIN_FILE"
-    else
-      python3 "$HEX_TO_BIN_SCRIPT_PATH" "$HEX_FILE" "$BIN_FILE"
-    fi
-  done
-done
+    while IFS= read -r base_name; do
+      [ -n "$base_name" ] || continue
+      bin_input="$OUT_DIR/$base_name.bin"
+      out_file="$OUT_DIR/${job_safe}_${base_name}${suffix}.csv"
 
-# Function to run benchmark for a specific optimization level
-run_benchmark() {
-  opt_level="$1"
-  test_bin="$2"
-  suffix="$3"
-  
-  log "Benchmarking $opt_level with $THREADS threads..."
-  
-  benchmark_start=$(python3 -c "import time; print(time.time())")
-  file_count=0
-  total_messages=0
-  
-  # Track throughput on synthetic tests only for consistent workload sizing.
-  for HEX_FILE in "$GENERATED_DIR"/*.hex; do
-    if [ ! -e "$HEX_FILE" ]; then
-      continue
-    fi
+      file_bytes=$(wc -c < "$bin_input" | tr -d ' ')
+      messages_in_file=$((file_bytes / MESSAGE_SIZE_BYTES))
+      total_messages=$((total_messages + messages_in_file))
 
-    base_name=$(basename "$HEX_FILE" .hex)
-    BIN_FILE="$OUT_DIR/$base_name.bin"
-    OUT_FILE="$OUT_DIR/${base_name}${suffix}.csv"
+      wait_for_slot
+      "$bin_path" "$bin_input" "$out_file" &
+      file_count=$((file_count + 1))
+    done < "$names_file"
+    wait_for_all_jobs
 
-    file_bytes=$(wc -c < "$BIN_FILE" | tr -d ' ')
-    messages_in_file=$((file_bytes / MESSAGE_SIZE_BYTES))
-    total_messages=$((total_messages + messages_in_file))
-
-    wait_for_slot
-    "$test_bin" "$BIN_FILE" "$OUT_FILE" &
-    file_count=$((file_count + 1))
-  done
-  
-  wait_for_all_jobs
-  benchmark_end=$(python3 -c "import time; print(time.time())")
-
-  # Keep hardcoded fixture outputs up to date, but exclude them from speed timing.
-  for HEX_FILE in "$TEST_DIR"/*.hex; do
-    if [ ! -e "$HEX_FILE" ]; then
-      continue
-    fi
-
-    base_name=$(basename "$HEX_FILE" .hex)
-    BIN_FILE="$OUT_DIR/$base_name.bin"
-    OUT_FILE="$OUT_DIR/${base_name}${suffix}.csv"
-
-    wait_for_slot
-    "$test_bin" "$BIN_FILE" "$OUT_FILE" &
-  done
-  wait_for_all_jobs
-  
-  echo "$opt_level|$benchmark_start|$benchmark_end|$file_count|$total_messages"
+    benchmark_end=$(python3 -c "import time; print(time.time())")
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$job_id" "$variant_label" "$benchmark_start" "$benchmark_end" "$file_count" "$total_messages" >> "$BENCHMARK_RESULTS_FILE"
+  done < "$BIN_MAP_FILE"
 }
 
-# Run all benchmarks
-benchmark_results=""
-benchmark_results="$benchmark_results$(run_benchmark 'Unoptimized' "$TEST_BIN" '')
-"
-benchmark_results="$benchmark_results$(run_benchmark 'Light -O1' "$TEST_BIN_LIGHT" '_light')
-"
-benchmark_results="$benchmark_results$(run_benchmark 'Moderate -O2' "$TEST_BIN_MOD" '_mod')
-"
-benchmark_results="$benchmark_results$(run_benchmark 'Aggressive -O3' "$TEST_BIN_AGG" '_agg')
-"
+print_benchmark_results() {
+  current_job=""
+  log_always ""
+  while IFS=$'\t' read -r job_id variant_label start_time end_time file_count total_messages; do
+    [ -n "$job_id" ] || continue
+    if [ "$job_id" != "$current_job" ]; then
+      current_job="$job_id"
+      log_always "$job_id"
+      log_always "Benchmark Results:"
+      log_always "=================="
+    fi
 
-# ============================================================================
-# STEP 5: COMPARE EXPECTED VS ACTUAL (REPORT FIRST ISSUE ONLY)
-# ============================================================================
-log "Validating results..."
-
-first_error=""
-for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
-  EXPECTED_BASE="$EXPECTED_DIR"
-  if [ "$HEX_DIR" = "$GENERATED_DIR" ]; then
-    EXPECTED_BASE="$GENERATED_EXPECTED_DIR"
-  fi
-  
-  for HEX_FILE in "$HEX_DIR"/*.hex; do
-    if [ ! -e "$HEX_FILE" ]; then
-      continue
-    fi
-    
-    base_name=$(basename "$HEX_FILE" .hex)
-    EXPECTED_FILE="$EXPECTED_BASE/$base_name.expected.csv"
-    
-    if [ ! -f "$EXPECTED_FILE" ]; then
-      first_error="Missing expected output: $EXPECTED_FILE"
-      break 2
-    fi
-    
-    OUT_FILE="$OUT_DIR/$base_name.csv"
-    if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
-      first_error="Unoptimized: Output differs from expected for $base_name"
-      break 2
-    fi
-    
-    OUT_FILE="$OUT_DIR/${base_name}_light.csv"
-    if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
-      first_error="Light -O1: Output differs from expected for $base_name"
-      break 2
-    fi
-    
-    OUT_FILE="$OUT_DIR/${base_name}_mod.csv"
-    if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
-      first_error="Moderate -O2: Output differs from expected for $base_name"
-      break 2
-    fi
-    
-    OUT_FILE="$OUT_DIR/${base_name}_agg.csv"
-    if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
-      first_error="Aggressive -O3: Output differs from expected for $base_name"
-      break 2
-    fi
-  done
-done
-
-# Report first error if found
-if [ -n "$first_error" ]; then
-  log_always "ERROR: $first_error"
-  
-  for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
-    EXPECTED_BASE="$EXPECTED_DIR"
-    if [ "$HEX_DIR" = "$GENERATED_DIR" ]; then
-      EXPECTED_BASE="$GENERATED_EXPECTED_DIR"
-    fi
-    
-    for HEX_FILE in "$HEX_DIR"/*.hex; do
-      if [ ! -e "$HEX_FILE" ]; then
-        continue
-      fi
-      
-      base_name=$(basename "$HEX_FILE" .hex)
-      EXPECTED_FILE="$EXPECTED_BASE/$base_name.expected.csv"
-      
-      for suffix in "" "_light" "_mod" "_agg"; do
-        OUT_FILE="$OUT_DIR/${base_name}${suffix}.csv"
-        if [ -f "$OUT_FILE" ] && [ -f "$EXPECTED_FILE" ]; then
-          if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
-            log_always "Red is expected, Green is actual:"
-            git diff --no-index -- "$EXPECTED_FILE" "$OUT_FILE" || true
-            exit 1
-          fi
-        fi
-      done
-    done
-  done
-  exit 1
-fi
-
-log "All tests passed!"
-
-# ============================================================================
-# PRINT BENCHMARK RESULTS
-# ============================================================================
-log_always ""
-log_always "Benchmark Results:"
-log_always "=================="
-
-echo "$benchmark_results" | grep '|' | while IFS='|' read -r opt_level start_time end_time file_count total_messages; do
-  if [ -n "$opt_level" ]; then
-  read elapsed msgs_per_sec <<EOF
+    read elapsed msgs_per_sec <<EOF
 $(python3 - <<PY
 elapsed = $end_time - $start_time
 msgs = $total_messages
 if elapsed <= 0:
-  mps = 0.0
+    mps = 0.0
 else:
-  mps = msgs / elapsed
+    mps = msgs / elapsed
 print(f"{elapsed:.3f} {mps:.1f}")
 PY
 )
 EOF
-  log_always "$opt_level: ${elapsed}s for $file_count files, $total_messages messages (${msgs_per_sec} msg/s)"
-  fi
-done
+    log_always "$variant_label: ${elapsed}s for $file_count files, $total_messages messages (${msgs_per_sec} msg/s)"
+  done < "$BENCHMARK_RESULTS_FILE"
+}
+
+eval "$MAIN_WORKFLOW"
