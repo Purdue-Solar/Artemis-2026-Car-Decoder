@@ -3,12 +3,12 @@ Raw/*
 !Raw/
 Out/*
 !Out/
-Test/*
-!Test/
 Test_Out/*
 !Test_Out/
-Test_Expected/*
-!Test_Expected/
+Test_Generated/*
+!Test_Generated/
+Test_Generated_Expected/*
+!Test_Generated_Expected/
 
 .vscode
 
