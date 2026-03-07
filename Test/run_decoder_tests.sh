@@ -13,6 +13,7 @@ done
 NUM_SYNTHETIC_TESTS=100
 MESSAGE_COUNT=500
 SEED_RETRY_LIMIT=100
+THREADS=4
 TEST_DIR_NAME="Test"
 EXPECTED_DIR_NAME="Test_Expected"
 GENERATED_DIR_NAME="Test_Generated"
@@ -61,6 +62,18 @@ log_always() {
   echo "$@"
 }
 
+# Wait until number of running background jobs is below THREADS
+wait_for_slot() {
+  while [ "$(jobs -rp | wc -l | tr -d ' ')" -ge "$THREADS" ]; do
+    sleep 0.05
+  done
+}
+
+# Wait for all background jobs
+wait_for_all_jobs() {
+  wait
+}
+
 # ============================================================================
 # STEP 1: CLEAN UP TEST DIRECTORIES
 # ============================================================================
@@ -80,7 +93,7 @@ if [ "$NUM_SYNTHETIC_TESTS" -gt 0 ]; then
   i=0
   gen_start_time=$(python3 -c "import time; print(time.time())")
   last_update_time="$gen_start_time"
-  UPDATE_INTERVAL=2  # Update every 2 seconds in quiet mode, less overhead
+  UPDATE_INTERVAL=2
   
   while [ "$i" -lt "$NUM_SYNTHETIC_TESTS" ]; do
     seed="$RANDOM"
@@ -109,9 +122,9 @@ if [ "$NUM_SYNTHETIC_TESTS" -gt 0 ]; then
       --expected-dir "$GENERATED_EXPECTED_DIR" > /dev/null 2>&1
     i=$((i + 1))
     
-    # Update progress periodically (only in non-quiet mode)
     if [ "$QUIET" -eq 0 ]; then
-      read current_time should_update eta <<< $(python3 - <<PY
+      read current_time should_update eta <<EOF
+$(python3 - <<PY
 import time
 current = time.time()
 should_update = current - $last_update_time >= $UPDATE_INTERVAL or $i >= $NUM_SYNTHETIC_TESTS
@@ -128,12 +141,13 @@ if should_update and $i > 0:
         eta = f"{eta_seconds/3600:.1f}h"
     print(f"{current} 1 {eta}")
 else:
-    print(f"{current} 0 ")
+    print(f"{current} 0")
 PY
 )
+EOF
       
       if [ "$should_update" = "1" ]; then
-        printf "\rGenerating synthetic test %d of %d (ETA: %s)...  " "$i" "$NUM_SYNTHETIC_TESTS" "$eta"
+        printf "\rGenerating synthetic test %d of %d (ETA: %s)...  " "$i" "$NUM_SYNTHETIC_TESTS" "${eta:-}"
         last_update_time="$current_time"
       fi
     fi
@@ -193,7 +207,7 @@ run_benchmark() {
   test_bin="$2"
   suffix="$3"
   
-  log "Benchmarking $opt_level..."
+  log "Benchmarking $opt_level with $THREADS threads..."
   
   benchmark_start=$(python3 -c "import time; print(time.time())")
   file_count=0
@@ -208,14 +222,15 @@ run_benchmark() {
       BIN_FILE="$OUT_DIR/$base_name.bin"
       OUT_FILE="$OUT_DIR/${base_name}${suffix}.csv"
       
-      "$test_bin" "$BIN_FILE" "$OUT_FILE"
+      wait_for_slot
+      "$test_bin" "$BIN_FILE" "$OUT_FILE" &
       file_count=$((file_count + 1))
     done
   done
   
+  wait_for_all_jobs
   benchmark_end=$(python3 -c "import time; print(time.time())")
   
-  # Calculate and store benchmark results
   echo "$opt_level|$benchmark_start|$benchmark_end|$file_count"
 }
 
@@ -255,28 +270,24 @@ for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
       break 2
     fi
     
-    # Check unoptimized version
     OUT_FILE="$OUT_DIR/$base_name.csv"
     if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
       first_error="Unoptimized: Output differs from expected for $base_name"
       break 2
     fi
     
-    # Check -O1 version
     OUT_FILE="$OUT_DIR/${base_name}_light.csv"
     if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
       first_error="Light -O1: Output differs from expected for $base_name"
       break 2
     fi
     
-    # Check -O2 version
     OUT_FILE="$OUT_DIR/${base_name}_mod.csv"
     if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
       first_error="Moderate -O2: Output differs from expected for $base_name"
       break 2
     fi
     
-    # Check -O3 version
     OUT_FILE="$OUT_DIR/${base_name}_agg.csv"
     if ! cmp -s "$EXPECTED_FILE" "$OUT_FILE"; then
       first_error="Aggressive -O3: Output differs from expected for $base_name"
@@ -289,7 +300,6 @@ done
 if [ -n "$first_error" ]; then
   log_always "ERROR: $first_error"
   
-  # Show diff for the failed test
   for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
     EXPECTED_BASE="$EXPECTED_DIR"
     if [ "$HEX_DIR" = "$GENERATED_DIR" ]; then
@@ -338,4 +348,3 @@ PY
     log_always "$opt_level: ${elapsed}s for $file_count files"
   fi
 done
-
