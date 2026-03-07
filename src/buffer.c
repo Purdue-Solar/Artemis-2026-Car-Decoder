@@ -1,5 +1,6 @@
 /* Authors:, Daniel Xu */
 
+/*
 #include "buffer.h"
 #include <stdlib.h>
 
@@ -25,3 +26,5 @@ void buffer_free(Buffer *buffer) {
     buffer->read_pos  = 0;
     buffer->count     = 0;
 }
+
+*/

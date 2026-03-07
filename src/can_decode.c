@@ -26,23 +26,13 @@ Row11Flags decode_row11_from_bytes(uint8_t msb, uint8_t lsb) {
     f.main_over_current_error = bit_u16(w,  5);
     f.main_current_warning    = bit_u16(w,  4);
 
-    f.aux_condition           = (uint8_t)(w & 0x0Fu); // bits 3..0
+    f.aux_condition           = (uint8_t)(w & 0x0Fu); /* bits 3..0 */
     return f;
-}
-
-int decode_row11_from_buffer(Buffer *buf, Row11Flags *out) {
-    if (!buf || !out) return -1;
-
-    uint8_t bytes[2];
-    int rc = buffer_read(buf, bytes, 2);
-    if (rc != 0) return -2;
-
-    *out = decode_row11_from_bytes(bytes[0], bytes[1]);
-    return 0;
 }
 
 void print_row11(const Row11Flags *f) {
     if (!f) return;
+
     printf("Row11Flags {\n");
     printf("  regen=%u\n", f->regen);
     printf("  cruise_down=%u\n", f->cruise_down);
