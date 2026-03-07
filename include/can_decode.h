@@ -44,9 +44,6 @@ typedef struct {
 // Decode from two bytes (byte0 is MSB, byte1 is LSB)
 Row11Flags decode_row11_from_bytes(uint8_t msb, uint8_t lsb);
 
-// Convenience: read 2 bytes from Buffer and decode
-int decode_row11_from_buffer(Buffer *buf, Row11Flags *out);
-
 // Debug helper
 void print_row11(const Row11Flags *f);
 
