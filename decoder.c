@@ -72,8 +72,9 @@ int read_message_from_file(FILE *file, struct message *msg) {
                                  ((uint16_t)buffer[offset + 1] << 8));
   offset += 2;
 
-  msg->oh_no_bits =
+  uint16_t status_bits =
       ((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8);
+  parse_status_flags(status_bits, &msg->oh_no_bits);
   offset += 2;
 
   return 0;
@@ -195,10 +196,22 @@ int main(int argc, char *argv[]) {
             message_data.SOC, message_data.limit, message_data.diag_one,
             message_data.diag_two, message_data.motor_curr,
             message_data.motor_vel, message_data.sink, message_data.temp);
-    struct status_flags flags = {0};
-    parse_status_flags(message_data.oh_no_bits, &flags);
-    print_bool_array(out_file, &flags.regen, 12, ",");
-    fprintf(out_file, ",%u\n", flags.aux_condition);
+    uint8_t status_values[12] = {
+        (uint8_t)message_data.oh_no_bits.regen,
+        (uint8_t)message_data.oh_no_bits.cruise_down,
+        (uint8_t)message_data.oh_no_bits.cruise_up,
+        (uint8_t)message_data.oh_no_bits.cruise,
+        (uint8_t)message_data.oh_no_bits.aux_over_voltage,
+        (uint8_t)message_data.oh_no_bits.aux_under_voltage,
+        (uint8_t)message_data.oh_no_bits.aux_over_current,
+        (uint8_t)message_data.oh_no_bits.aux_current_warning,
+        (uint8_t)message_data.oh_no_bits.main_over_voltage,
+        (uint8_t)message_data.oh_no_bits.main_under_voltage,
+        (uint8_t)message_data.oh_no_bits.main_over_current_error,
+        (uint8_t)message_data.oh_no_bits.main_current_warning,
+    };
+    print_bool_array(out_file, status_values, 12, ",");
+    fprintf(out_file, ",%u\n", message_data.oh_no_bits.aux_condition);
     message_code = read_message_from_file(in_file, &message_data);
   }
 
