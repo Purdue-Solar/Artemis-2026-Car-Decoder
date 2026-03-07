@@ -2,9 +2,27 @@
 /* Created on: 1/24/2026 */
 #include "decoder.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+static float canonicalize_float_sign(float value) {
+  uint32_t bits = 0;
+
+  if (value == 0.0f) {
+    return 0.0f;
+  }
+
+  if (!isnan(value)) {
+    return value;
+  }
+
+  memcpy(&bits, &value, sizeof(bits));
+  bits &= 0x7FFFFFFFu;
+  memcpy(&value, &bits, sizeof(value));
+  return value;
+}
 
 /*
  * Function Name: read_message_from_file
@@ -56,20 +74,20 @@ int read_message_from_file(FILE *file, struct message *msg) {
 
   msg->diag_two = buffer[offset++];
 
-  msg->motor_curr = convert_to_b_float(((uint16_t)buffer[offset]) |
-                                       ((uint16_t)buffer[offset + 1] << 8));
+  msg->motor_curr = canonicalize_float_sign(convert_to_b_float(
+      ((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8)));
   offset += 2;
 
-  msg->motor_vel = convert_to_b_float(((uint16_t)buffer[offset]) |
-                                      ((uint16_t)buffer[offset + 1] << 8));
+  msg->motor_vel = canonicalize_float_sign(convert_to_b_float(
+      ((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8)));
   offset += 2;
 
-  msg->sink = convert_to_b_float(((uint16_t)buffer[offset]) |
-                                 ((uint16_t)buffer[offset + 1] << 8));
+  msg->sink = canonicalize_float_sign(convert_to_b_float(
+      ((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8)));
   offset += 2;
 
-  msg->temp = convert_to_b_float(((uint16_t)buffer[offset]) |
-                                 ((uint16_t)buffer[offset + 1] << 8));
+  msg->temp = canonicalize_float_sign(convert_to_b_float(
+      ((uint16_t)buffer[offset]) | ((uint16_t)buffer[offset + 1] << 8)));
   offset += 2;
 
   uint16_t status_bits =

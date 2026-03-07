@@ -10,8 +10,9 @@ for arg in "$@"; do
 done
 
 # Constants
-NUM_SYNTHETIC_TESTS=100
+NUM_SYNTHETIC_TESTS=1000
 MESSAGE_COUNT=500
+MESSAGE_SIZE_BYTES=19
 SEED_RETRY_LIMIT=100
 THREADS=4
 TEST_DIR_NAME="Test"
@@ -211,27 +212,46 @@ run_benchmark() {
   
   benchmark_start=$(python3 -c "import time; print(time.time())")
   file_count=0
+  total_messages=0
   
-  for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
-    for HEX_FILE in "$HEX_DIR"/*.hex; do
-      if [ ! -e "$HEX_FILE" ]; then
-        continue
-      fi
-      
-      base_name=$(basename "$HEX_FILE" .hex)
-      BIN_FILE="$OUT_DIR/$base_name.bin"
-      OUT_FILE="$OUT_DIR/${base_name}${suffix}.csv"
-      
-      wait_for_slot
-      "$test_bin" "$BIN_FILE" "$OUT_FILE" &
-      file_count=$((file_count + 1))
-    done
+  # Track throughput on synthetic tests only for consistent workload sizing.
+  for HEX_FILE in "$GENERATED_DIR"/*.hex; do
+    if [ ! -e "$HEX_FILE" ]; then
+      continue
+    fi
+
+    base_name=$(basename "$HEX_FILE" .hex)
+    BIN_FILE="$OUT_DIR/$base_name.bin"
+    OUT_FILE="$OUT_DIR/${base_name}${suffix}.csv"
+
+    file_bytes=$(wc -c < "$BIN_FILE" | tr -d ' ')
+    messages_in_file=$((file_bytes / MESSAGE_SIZE_BYTES))
+    total_messages=$((total_messages + messages_in_file))
+
+    wait_for_slot
+    "$test_bin" "$BIN_FILE" "$OUT_FILE" &
+    file_count=$((file_count + 1))
   done
   
   wait_for_all_jobs
   benchmark_end=$(python3 -c "import time; print(time.time())")
+
+  # Keep hardcoded fixture outputs up to date, but exclude them from speed timing.
+  for HEX_FILE in "$TEST_DIR"/*.hex; do
+    if [ ! -e "$HEX_FILE" ]; then
+      continue
+    fi
+
+    base_name=$(basename "$HEX_FILE" .hex)
+    BIN_FILE="$OUT_DIR/$base_name.bin"
+    OUT_FILE="$OUT_DIR/${base_name}${suffix}.csv"
+
+    wait_for_slot
+    "$test_bin" "$BIN_FILE" "$OUT_FILE" &
+  done
+  wait_for_all_jobs
   
-  echo "$opt_level|$benchmark_start|$benchmark_end|$file_count"
+  echo "$opt_level|$benchmark_start|$benchmark_end|$file_count|$total_messages"
 }
 
 # Run all benchmarks
@@ -338,13 +358,20 @@ log_always ""
 log_always "Benchmark Results:"
 log_always "=================="
 
-echo "$benchmark_results" | grep '|' | while IFS='|' read -r opt_level start_time end_time file_count; do
+echo "$benchmark_results" | grep '|' | while IFS='|' read -r opt_level start_time end_time file_count total_messages; do
   if [ -n "$opt_level" ]; then
-    elapsed=$(python3 - <<PY
+  read elapsed msgs_per_sec <<EOF
+$(python3 - <<PY
 elapsed = $end_time - $start_time
-print(f"{elapsed:.3f}")
+msgs = $total_messages
+if elapsed <= 0:
+  mps = 0.0
+else:
+  mps = msgs / elapsed
+print(f"{elapsed:.3f} {mps:.1f}")
 PY
 )
-    log_always "$opt_level: ${elapsed}s for $file_count files"
+EOF
+  log_always "$opt_level: ${elapsed}s for $file_count files, $total_messages messages (${msgs_per_sec} msg/s)"
   fi
 done
