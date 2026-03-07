@@ -10,6 +10,7 @@ Test_Generated/*
 Test_Generated_Expected/*
 !Test_Generated_Expected/
 target/
+**__pycache__
 
 .vscode
 

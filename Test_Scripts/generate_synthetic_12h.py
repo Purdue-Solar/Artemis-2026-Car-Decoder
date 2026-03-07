@@ -8,7 +8,6 @@ from pathlib import Path
 script_dir = Path(__file__).resolve().parent
 root = script_dir.parent
 
-message_count = 500
 start = datetime(2026, 2, 21, 8, 0, 0, tzinfo=timezone.utc)
 end = datetime(2026, 2, 21, 20, 0, 0, tzinfo=timezone.utc)
 span = (end - start).total_seconds()
@@ -30,6 +29,12 @@ parser = argparse.ArgumentParser(
 parser.add_argument("name", help="Base file name (without extension)")
 parser.add_argument("seed", type=int, help="Random seed (integer)")
 parser.add_argument(
+    "--message-count",
+    type=int,
+    default=1000,
+    help="Number of messages to generate (default: 1000)",
+)
+parser.add_argument(
     "--hex-dir",
     default=str(root / "Test_Generated"),
     help="Directory for generated .hex files",
@@ -44,7 +49,11 @@ args = parser.parse_args()
 if args.seed < 0:
     raise ValueError("Seed must be a non-negative integer")
 
+if args.message_count < 1:
+    raise ValueError("Message count must be at least 1")
+
 random.seed(args.seed)
+message_count = args.message_count
 
 hex_dir = Path(args.hex_dir)
 expected_dir = Path(args.expected_dir)

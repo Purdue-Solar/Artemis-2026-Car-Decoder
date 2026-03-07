@@ -11,7 +11,7 @@ done
 
 # Constants
 NUM_SYNTHETIC_TESTS=1000
-MESSAGE_COUNT=500
+MESSAGE_COUNT=1000
 MESSAGE_SIZE_BYTES=19
 SEED_RETRY_LIMIT=100
 THREADS=4
@@ -26,9 +26,9 @@ TARGET_DIR_NAME="target"
 BUILD_DIR_NAME="decoder-tests"
 
 GENERATED_SEED_FILE_NAME="generated_seeds.txt"
-GENERATOR_SCRIPT_NAME="generate_synthetic_12h_500.py"
+GENERATOR_SCRIPT_NAME="generate_synthetic_12h.py"
 HEX_TO_BIN_SCRIPT_NAME="hex_to_bin.py"
-SYNTHETIC_NAME_PREFIX="synthetic_12h_500_"
+SYNTHETIC_NAME_PREFIX="synthetic_12h_${MESSAGE_COUNT}_"
 TEST_SOURCE_NAME="test_decoder.c"
 
 OPT_FLAG_LIGHT="-O1"
@@ -628,6 +628,7 @@ generate_synthetic_tests() {
 
     python3 "$GENERATOR_SCRIPT_PATH" \
       "$name" "$seed" \
+      --message-count "$MESSAGE_COUNT" \
       --hex-dir "$GENERATED_DIR" \
       --expected-dir "$GENERATED_EXPECTED_DIR" > /dev/null 2>&1
 
