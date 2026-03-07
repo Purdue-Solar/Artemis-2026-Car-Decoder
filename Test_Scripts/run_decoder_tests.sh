@@ -10,7 +10,7 @@ for arg in "$@"; do
 done
 
 # Constants
-NUM_SYNTHETIC_TESTS=10
+NUM_SYNTHETIC_TESTS=100
 MESSAGE_COUNT=500
 MESSAGE_SIZE_BYTES=19
 SEED_RETRY_LIMIT=100
@@ -20,19 +20,29 @@ EXPECTED_DIR_NAME="Test_Expected"
 GENERATED_DIR_NAME="Test_Generated"
 GENERATED_EXPECTED_DIR_NAME="Test_Generated_Expected"
 OUT_DIR_NAME="Test_Out"
+SCRIPT_DIR_NAME="Test_Scripts"
 GENERATED_SEED_FILE_NAME="generated_seeds.txt"
 GENERATOR_SCRIPT_NAME="generate_synthetic_12h_500.py"
+HEX_TO_BIN_SCRIPT_NAME="hex_to_bin.py"
 SYNTHETIC_NAME_PREFIX="synthetic_12h_500_"
-DECODER_SOURCE_NAME="src/decoder.c"
+DECODER_SOURCE_NAME="src/main.c"
 TEST_SOURCE_NAME="test_decoder.c"
-OBJ_FILE_NAME="decoder.o"
+OBJ_FILE_NAME="main.o"
 TEST_BIN_NAME="decoder_test"
+SUPPORT_OBJ_FILE_NAME="decoder_support.o"
+SUPPORT_CAN_OBJ_FILE_NAME="can_decode_support.o"
 OBJ_LIGHT_FILE_NAME="decoder_light.o"
 TEST_BIN_LIGHT_NAME="decoder_test_light"
+SUPPORT_OBJ_LIGHT_FILE_NAME="decoder_support_light.o"
+SUPPORT_CAN_OBJ_LIGHT_FILE_NAME="can_decode_support_light.o"
 OBJ_MOD_FILE_NAME="decoder_mod.o"
 TEST_BIN_MOD_NAME="decoder_test_mod"
+SUPPORT_OBJ_MOD_FILE_NAME="decoder_support_mod.o"
+SUPPORT_CAN_OBJ_MOD_FILE_NAME="can_decode_support_mod.o"
 OBJ_AGG_FILE_NAME="decoder_agg.o"
 TEST_BIN_AGG_NAME="decoder_test_agg"
+SUPPORT_OBJ_AGG_FILE_NAME="decoder_support_agg.o"
+SUPPORT_CAN_OBJ_AGG_FILE_NAME="can_decode_support_agg.o"
 OPT_FLAG_LIGHT="-O1"
 OPT_FLAG_MOD="-O2"
 OPT_FLAG_AGG="-O3"
@@ -50,33 +60,53 @@ EXPECTED_DIR=$(root_path "$EXPECTED_DIR_NAME")
 GENERATED_DIR=$(root_path "$GENERATED_DIR_NAME")
 GENERATED_EXPECTED_DIR=$(root_path "$GENERATED_EXPECTED_DIR_NAME")
 OUT_DIR=$(root_path "$OUT_DIR_NAME")
+SCRIPT_DIR=$(root_path "$SCRIPT_DIR_NAME")
+INCLUDE_DIR=$(root_path "include")
 DECODER_SOURCE_PATH=$(root_path "$DECODER_SOURCE_NAME")
+DECODER_SOURCE_REL_PATH="${DECODER_SOURCE_NAME#./}"
+DECODER_SOURCE_REL_PATH="${DECODER_SOURCE_REL_PATH#/}"
 TEST_SOURCE_PATH=$(root_path "$TEST_DIR_NAME/$TEST_SOURCE_NAME")
-GENERATOR_SCRIPT_PATH=$(root_path "$TEST_DIR_NAME/$GENERATOR_SCRIPT_NAME")
+GENERATOR_SCRIPT_PATH=$(root_path "$SCRIPT_DIR_NAME/$GENERATOR_SCRIPT_NAME")
+HEX_TO_BIN_SCRIPT_PATH=$(root_path "$SCRIPT_DIR_NAME/$HEX_TO_BIN_SCRIPT_NAME")
+CORE_DECODER_SOURCE_PATH=$(root_path "src/decoder.c")
+CAN_DECODE_SOURCE_PATH=$(root_path "src/can_decode.c")
 
 DECODER_SOURCE_DIR=$(dirname "$DECODER_SOURCE_PATH")
-CLANG_INCLUDE_FLAGS=(-I"$ROOT_DIR" -I"$DECODER_SOURCE_DIR")
+CLANG_INCLUDE_FLAGS=(-I"$ROOT_DIR" -I"$DECODER_SOURCE_DIR" -I"$INCLUDE_DIR")
 OBJ_FILE="$OUT_DIR/$OBJ_FILE_NAME"
 TEST_BIN="$OUT_DIR/$TEST_BIN_NAME"
+SUPPORT_OBJ_FILE="$OUT_DIR/$SUPPORT_OBJ_FILE_NAME"
+SUPPORT_CAN_OBJ_FILE="$OUT_DIR/$SUPPORT_CAN_OBJ_FILE_NAME"
 OBJ_LIGHT_FILE="$OUT_DIR/$OBJ_LIGHT_FILE_NAME"
 TEST_BIN_LIGHT="$OUT_DIR/$TEST_BIN_LIGHT_NAME"
+SUPPORT_OBJ_LIGHT_FILE="$OUT_DIR/$SUPPORT_OBJ_LIGHT_FILE_NAME"
+SUPPORT_CAN_OBJ_LIGHT_FILE="$OUT_DIR/$SUPPORT_CAN_OBJ_LIGHT_FILE_NAME"
 OBJ_MOD_FILE="$OUT_DIR/$OBJ_MOD_FILE_NAME"
 TEST_BIN_MOD="$OUT_DIR/$TEST_BIN_MOD_NAME"
+SUPPORT_OBJ_MOD_FILE="$OUT_DIR/$SUPPORT_OBJ_MOD_FILE_NAME"
+SUPPORT_CAN_OBJ_MOD_FILE="$OUT_DIR/$SUPPORT_CAN_OBJ_MOD_FILE_NAME"
 OBJ_AGG_FILE="$OUT_DIR/$OBJ_AGG_FILE_NAME"
 TEST_BIN_AGG="$OUT_DIR/$TEST_BIN_AGG_NAME"
+SUPPORT_OBJ_AGG_FILE="$OUT_DIR/$SUPPORT_OBJ_AGG_FILE_NAME"
+SUPPORT_CAN_OBJ_AGG_FILE="$OUT_DIR/$SUPPORT_CAN_OBJ_AGG_FILE_NAME"
 
 if [ ! -f "$DECODER_SOURCE_PATH" ]; then
-  log_always "ERROR: Decoder source not found at $DECODER_SOURCE_PATH"
+  echo "ERROR: Decoder source not found at $DECODER_SOURCE_PATH"
   exit 1
 fi
 
 if [ ! -f "$TEST_SOURCE_PATH" ]; then
-  log_always "ERROR: Test source not found at $TEST_SOURCE_PATH"
+  echo "ERROR: Test source not found at $TEST_SOURCE_PATH"
   exit 1
 fi
 
 if [ ! -f "$GENERATOR_SCRIPT_PATH" ]; then
-  log_always "ERROR: Generator script not found at $GENERATOR_SCRIPT_PATH"
+  echo "ERROR: Generator script not found at $GENERATOR_SCRIPT_PATH"
+  exit 1
+fi
+
+if [ ! -f "$HEX_TO_BIN_SCRIPT_PATH" ]; then
+  echo "ERROR: Hex to bin script not found at $HEX_TO_BIN_SCRIPT_PATH"
   exit 1
 fi
 
@@ -191,18 +221,49 @@ fi
 # ============================================================================
 # STEP 3: COMPILE ALL OPTIMIZATION LEVELS
 # ============================================================================
+
+compile_variant() {
+  local opt_flag="$1"
+  local primary_obj="$2"
+  local support_obj="$3"
+  local support_can_obj="$4"
+  local output_bin="$5"
+
+  local compile_flags=("${CLANG_INCLUDE_FLAGS[@]}")
+  if [ -n "$opt_flag" ]; then
+    compile_flags=("$opt_flag" "${compile_flags[@]}")
+  fi
+
+  clang "${compile_flags[@]}" -Dmain=decoder_source_main -c "$DECODER_SOURCE_PATH" -o "$primary_obj"
+
+  local link_objects=("$primary_obj")
+
+  if [ "$DECODER_SOURCE_REL_PATH" != "src/decoder.c" ]; then
+    if [ ! -f "$CORE_DECODER_SOURCE_PATH" ]; then
+      log_always "ERROR: Required decoder source not found at $CORE_DECODER_SOURCE_PATH"
+      exit 1
+    fi
+    clang "${compile_flags[@]}" -Dmain=decoder_main -c "$CORE_DECODER_SOURCE_PATH" -o "$support_obj"
+    link_objects+=("$support_obj")
+  fi
+
+  if [ "$DECODER_SOURCE_REL_PATH" = "src/main.c" ]; then
+    if [ ! -f "$CAN_DECODE_SOURCE_PATH" ]; then
+      log_always "ERROR: Required CAN decoder source not found at $CAN_DECODE_SOURCE_PATH"
+      exit 1
+    fi
+    clang "${compile_flags[@]}" -c "$CAN_DECODE_SOURCE_PATH" -o "$support_can_obj"
+    link_objects+=("$support_can_obj")
+  fi
+
+  clang "${compile_flags[@]}" "$TEST_SOURCE_PATH" "${link_objects[@]}" -o "$output_bin"
+}
+
 log "Compiling decoder with all optimization levels..."
-clang "${CLANG_INCLUDE_FLAGS[@]}" -Dmain=decoder_main -c "$DECODER_SOURCE_PATH" -o "$OBJ_FILE" 2>/dev/null
-clang "${CLANG_INCLUDE_FLAGS[@]}" "$TEST_SOURCE_PATH" "$OBJ_FILE" -o "$TEST_BIN" 2>/dev/null
-
-clang $OPT_FLAG_LIGHT "${CLANG_INCLUDE_FLAGS[@]}" -Dmain=decoder_main -c "$DECODER_SOURCE_PATH" -o "$OBJ_LIGHT_FILE" 2>/dev/null
-clang $OPT_FLAG_LIGHT "${CLANG_INCLUDE_FLAGS[@]}" "$TEST_SOURCE_PATH" "$OBJ_LIGHT_FILE" -o "$TEST_BIN_LIGHT" 2>/dev/null
-
-clang $OPT_FLAG_MOD "${CLANG_INCLUDE_FLAGS[@]}" -Dmain=decoder_main -c "$DECODER_SOURCE_PATH" -o "$OBJ_MOD_FILE" 2>/dev/null
-clang $OPT_FLAG_MOD "${CLANG_INCLUDE_FLAGS[@]}" "$TEST_SOURCE_PATH" "$OBJ_MOD_FILE" -o "$TEST_BIN_MOD" 2>/dev/null
-
-clang $OPT_FLAG_AGG "${CLANG_INCLUDE_FLAGS[@]}" -Dmain=decoder_main -c "$DECODER_SOURCE_PATH" -o "$OBJ_AGG_FILE" 2>/dev/null
-clang $OPT_FLAG_AGG "${CLANG_INCLUDE_FLAGS[@]}" "$TEST_SOURCE_PATH" "$OBJ_AGG_FILE" -o "$TEST_BIN_AGG" 2>/dev/null
+compile_variant "" "$OBJ_FILE" "$SUPPORT_OBJ_FILE" "$SUPPORT_CAN_OBJ_FILE" "$TEST_BIN"
+compile_variant "$OPT_FLAG_LIGHT" "$OBJ_LIGHT_FILE" "$SUPPORT_OBJ_LIGHT_FILE" "$SUPPORT_CAN_OBJ_LIGHT_FILE" "$TEST_BIN_LIGHT"
+compile_variant "$OPT_FLAG_MOD" "$OBJ_MOD_FILE" "$SUPPORT_OBJ_MOD_FILE" "$SUPPORT_CAN_OBJ_MOD_FILE" "$TEST_BIN_MOD"
+compile_variant "$OPT_FLAG_AGG" "$OBJ_AGG_FILE" "$SUPPORT_OBJ_AGG_FILE" "$SUPPORT_CAN_OBJ_AGG_FILE" "$TEST_BIN_AGG"
 
 log "Compilation complete."
 
@@ -225,7 +286,7 @@ for HEX_DIR in "$TEST_DIR" "$GENERATED_DIR"; do
     if command -v xxd >/dev/null 2>&1; then
       xxd -r -p "$HEX_FILE" > "$BIN_FILE"
     else
-      python3 "$TEST_DIR/hex_to_bin.py" "$HEX_FILE" "$BIN_FILE"
+      python3 "$HEX_TO_BIN_SCRIPT_PATH" "$HEX_FILE" "$BIN_FILE"
     fi
   done
 done
