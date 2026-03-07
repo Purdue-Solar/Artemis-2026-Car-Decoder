@@ -1,10 +1,10 @@
 jobs:
   Nanson:
     c_files:
+      - decoder_app.c
       - decoder.c
       - decoder.h
-  Daniel:
+      - message_queue.c
+  Nanson_harness:
     c_files:
-      - main.c
-      - can_decode.c
-      - buffer.c
+      - decoder.c

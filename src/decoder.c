@@ -123,106 +123,41 @@ void parse_status_flags(uint16_t bits, struct status_flags *flags) {
 } /* parse_status_flags() */
 
 /*
- * Function Name: print_bool_array
- * Prints an array of uint8_t values as boolean strings to a file
+ * Function Name: print_bool_flags
+ * Prints status flag fields as boolean strings to a file
  *
  * Parameters:
  *   file - the file to write to
- *   values - pointer to array of uint8_t values (treated as booleans)
- *   length - number of values to print
+ *   flags - pointer to status_flags struct
  *   delimiter - string to use as separator between values
  *
  * Returns: void
  */
-void print_bool_array(FILE *file, const uint8_t *values, size_t length,
+void print_bool_flags(FILE *file, const struct status_flags *flags,
                       const char *delimiter) {
-  for (size_t i = 0; i < length; i++) {
+  if ((file == NULL) || (flags == NULL) || (delimiter == NULL)) {
+    return;
+  }
+
+  const unsigned values[12] = {
+      flags->regen,
+      flags->cruise_down,
+      flags->cruise_up,
+      flags->cruise,
+      flags->aux_over_voltage,
+      flags->aux_under_voltage,
+      flags->aux_over_current,
+      flags->aux_current_warning,
+      flags->main_over_voltage,
+      flags->main_under_voltage,
+      flags->main_over_current_error,
+      flags->main_current_warning,
+  };
+
+  for (size_t i = 0; i < 12; i++) {
     fprintf(file, "%s", values[i] ? "True" : "False");
-    if (i < length - 1) {
+    if (i < 11) {
       fprintf(file, "%s", delimiter);
     }
   }
-} /* print_bool_array() */
-
-/*
- * Function Name: main
- * The entry point of the decoder.
- *
- * Returns: An exit code
- */
-int main(int argc, char *argv[]) {
-  FILE *in_file = NULL;
-  FILE *out_file = NULL;
-  int return_code = 0;
-  if ((argc != 2) || (argc != 3)) {
-    fprintf(stderr, "Expected 2 or less arguments, gotten %d\n", (argc - 1));
-    fprintf(stderr, "Arguments read:\n");
-    for (int i = 1; i < argc; i++) {
-      fprintf(stderr, "%s", argv[i]);
-      if (i != argc - 1) {
-        printf(", ");
-      }
-    }
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Usage: <executable> <output_path> or\n");
-    fprintf(stderr, "Usage: <executable> <output_path> <input_path>\n");
-    return_code = BAD_NUM_ARGUMENTS;
-    goto cleanup;
-  }
-  if (argc == 3) {
-    in_file = fopen(argv[2], "rb");
-    if (in_file == NULL) {
-      fprintf(stderr, "Input file cannot be opened");
-    }
-    return_code = FILE_READ_ERR;
-    goto cleanup;
-  }
-  else {
-    in_file = stdin;
-  }
-  out_file = fopen(argv[1], "w");
-  if (out_file == NULL) {
-    fprintf(stderr, "Destination file cannot be written to (%s)", argv[1]);
-    return_code = FILE_WRITE_ERR;
-    goto cleanup;
-  }
-
-  /* Write actual code here */
-  struct message message_data = {0};
-  int message_code = read_message_from_file(in_file, &message_data);
-  while (message_code == 0) {
-    fprintf(out_file, "%ld,%u,%u,%u,%u,%u,%f,%f,%f,%f,",
-            message_data.time_stamp, message_data.battery_temp,
-            message_data.SOC, message_data.limit, message_data.diag_one,
-            message_data.diag_two, message_data.motor_curr,
-            message_data.motor_vel, message_data.sink, message_data.temp);
-    uint8_t status_values[12] = {
-        (uint8_t)message_data.oh_no_bits.regen,
-        (uint8_t)message_data.oh_no_bits.cruise_down,
-        (uint8_t)message_data.oh_no_bits.cruise_up,
-        (uint8_t)message_data.oh_no_bits.cruise,
-        (uint8_t)message_data.oh_no_bits.aux_over_voltage,
-        (uint8_t)message_data.oh_no_bits.aux_under_voltage,
-        (uint8_t)message_data.oh_no_bits.aux_over_current,
-        (uint8_t)message_data.oh_no_bits.aux_current_warning,
-        (uint8_t)message_data.oh_no_bits.main_over_voltage,
-        (uint8_t)message_data.oh_no_bits.main_under_voltage,
-        (uint8_t)message_data.oh_no_bits.main_over_current_error,
-        (uint8_t)message_data.oh_no_bits.main_current_warning,
-    };
-    print_bool_array(out_file, status_values, 12, ",");
-    fprintf(out_file, ",%u\n", message_data.oh_no_bits.aux_condition);
-    message_code = read_message_from_file(in_file, &message_data);
-  }
-
-cleanup:
-  if (in_file != NULL) {
-    fclose(in_file);
-    in_file = NULL;
-  }
-  if (out_file != NULL) {
-    fclose(out_file);
-    out_file = NULL;
-  }
-  return return_code;
-} /* main() */
+} /* print_bool_flags() */

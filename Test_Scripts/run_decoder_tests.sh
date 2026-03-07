@@ -10,7 +10,7 @@ for arg in "$@"; do
 done
 
 # Constants
-NUM_SYNTHETIC_TESTS=100
+NUM_SYNTHETIC_TESTS=1000
 MESSAGE_COUNT=500
 MESSAGE_SIZE_BYTES=19
 SEED_RETRY_LIMIT=100
@@ -44,7 +44,6 @@ OUT_DIR="$ROOT_DIR/$OUT_DIR_NAME"
 SCRIPT_DIR="$ROOT_DIR/$SCRIPT_DIR_NAME"
 TARGET_DIR="$ROOT_DIR/$TARGET_DIR_NAME"
 BUILD_DIR="$TARGET_DIR/$BUILD_DIR_NAME"
-BUILD_OBJ_DIR="$BUILD_DIR/obj"
 BUILD_BIN_DIR="$BUILD_DIR/bin"
 INCLUDE_DIR="$ROOT_DIR/include"
 TEST_SOURCE_PATH="$SCRIPT_DIR/$TEST_SOURCE_NAME"
@@ -56,6 +55,7 @@ BIN_MAP_FILE="$BUILD_DIR/job_bins.tsv"
 HARDCODED_NAMES_FILE="$BUILD_DIR/hardcoded_hex_names.txt"
 SYNTH_NAMES_FILE="$BUILD_DIR/synthetic_hex_names.txt"
 BENCHMARK_RESULTS_FILE="$BUILD_DIR/benchmark_results.tsv"
+WARN_ONCE_FILE="$BUILD_DIR/warn_once.tsv"
 
 # ============================================================================
 # MAIN EXECUTION
@@ -126,6 +126,19 @@ log_always() {
   echo "$@"
 }
 
+warn_once() {
+  warn_key="$1"
+  shift
+  warn_message="$*"
+
+  mkdir -p "$BUILD_DIR"
+  touch "$WARN_ONCE_FILE"
+  if ! grep -Fxq "$warn_key" "$WARN_ONCE_FILE"; then
+    printf '%s\n' "$warn_key" >> "$WARN_ONCE_FILE"
+    log "$warn_message"
+  fi
+}
+
 wait_for_slot() {
   while [ "$(jobs -rp | wc -l | tr -d ' ')" -ge "$THREADS" ]; do
     sleep 0.05
@@ -169,7 +182,7 @@ validate_required_inputs() {
 }
 
 prepare_output_dirs() {
-  mkdir -p "$OUT_DIR" "$GENERATED_DIR" "$GENERATED_EXPECTED_DIR" "$BUILD_OBJ_DIR" "$BUILD_BIN_DIR"
+  mkdir -p "$OUT_DIR" "$GENERATED_DIR" "$GENERATED_EXPECTED_DIR" "$BUILD_BIN_DIR"
 }
 
 cleanup_previous_outputs() {
@@ -177,9 +190,8 @@ cleanup_previous_outputs() {
   rm -f "$OUT_DIR"/*.csv
   rm -f "$BUILD_DIR"/*.tsv
   rm -f "$BUILD_DIR"/*.txt
-  rm -rf "$BUILD_OBJ_DIR"
   rm -rf "$BUILD_BIN_DIR"
-  mkdir -p "$BUILD_OBJ_DIR" "$BUILD_BIN_DIR"
+  mkdir -p "$BUILD_BIN_DIR"
   rm -f "$GENERATED_DIR"/*.hex
   rm -f "$GENERATED_EXPECTED_DIR"/*.expected.csv
 }
@@ -294,32 +306,35 @@ def extract_c_files(cfg):
     return []
 
 def normalize_job_files(job_dir, requested):
-    dir_c_files = sorted(
-        [name for name in os.listdir(job_dir)
-         if name.endswith('.c') and os.path.isfile(os.path.join(job_dir, name))]
-    )
-    if not requested:
-        return []
+  dir_source_files = sorted(
+    [
+      name
+      for name in os.listdir(job_dir)
+      if (name.endswith('.c') or name.endswith('.h')) and os.path.isfile(os.path.join(job_dir, name))
+    ]
+  )
+  if not requested:
+    return []
 
-    expanded = []
-    for item in requested:
-        token = item.strip()
-        if token.lower() == "all":
-            expanded.extend(dir_c_files)
-        else:
-            expanded.append(token)
+  expanded = []
+  for item in requested:
+    token = item.strip()
+    if token.lower() == "all":
+      expanded.extend(dir_source_files)
+    else:
+      expanded.append(token)
 
-    result = []
-    seen = set()
-    for item in expanded:
-        path = os.path.join(job_dir, item)
-        if os.path.isfile(path) and item.endswith('.c'):
-            if item not in seen:
-                seen.add(item)
-                result.append(item)
-        else:
-            warn(f"Skipping missing/non-C file '{item}' in {job_dir}")
-    return result
+  result = []
+  seen = set()
+  for item in expanded:
+    path = os.path.join(job_dir, item)
+    if os.path.isfile(path) and (item.endswith('.c') or item.endswith('.h')):
+      if item not in seen:
+        seen.add(item)
+        result.append(item)
+    else:
+      warn(f"Skipping missing/non-source file '{item}' in {job_dir}")
+  return result
 
 def parse_yaml_file(path):
     text = open(path, "r", encoding="utf-8").read()
@@ -400,35 +415,109 @@ compile_job_variant() {
     compile_flags=("${include_flags[@]}")
   fi
 
-  job_obj_dir="$BUILD_OBJ_DIR/$dir_safe/$name_safe"
   job_bin_dir="$BUILD_BIN_DIR/$dir_safe/$name_safe"
-  mkdir -p "$job_obj_dir" "$job_bin_dir"
+  mkdir -p "$job_bin_dir"
 
-  test_obj="$job_obj_dir/${job_safe}${suffix}_test.o"
-  clang "${compile_flags[@]}" -c "$TEST_SOURCE_PATH" -o "$test_obj"
-
-  obj_files=()
+  compile_inputs=()
   old_ifs="$IFS"
   IFS=','
+  c_source_count=0
   for src_file in $source_csv; do
+    case "$src_file" in
+      *.h)
+        # Headers are valid job members, but they are not standalone compile units.
+        continue
+        ;;
+      *.c)
+        c_source_count=$((c_source_count + 1))
+        ;;
+      *)
+        log_always "ERROR: $job_id: Unsupported source extension in $src_file"
+        exit 1
+        ;;
+    esac
+
     src_path="$job_dir/$src_file"
     if [ ! -f "$src_path" ]; then
       log_always "ERROR: $job_id: Missing source file $src_path"
       exit 1
     fi
-    src_base=$(basename "$src_file" .c)
-    src_safe=$(sanitize_name "$src_base")
-    obj_file="$job_obj_dir/${job_safe}${suffix}_${src_safe}.o"
-
-    # Rename decoder-side main symbols so test harness main remains the entrypoint.
-    clang "${compile_flags[@]}" -Dmain=decoder_source_main -c "$src_path" -o "$obj_file"
-    obj_files+=("$obj_file")
+    compile_inputs+=("$src_path")
   done
   IFS="$old_ifs"
 
+  if [ "$c_source_count" -eq 0 ]; then
+    log_always "ERROR: $job_id: Job does not include any .c compile units"
+    exit 1
+  fi
+
   bin_path="$job_bin_dir/job_bin_${job_safe}${suffix}"
-  clang "${compile_flags[@]}" "$test_obj" "${obj_files[@]}" -o "$bin_path"
-  printf '%s\t%s\t%s\t%s\t%s\n' "$job_id" "$job_safe" "$variant_label" "$suffix" "$bin_path" >> "$BIN_MAP_FILE"
+
+  # Fallback build should use library-like sources only, since test_decoder.c
+  # provides the main() entry point.
+  fallback_inputs=()
+  for src_path in "${compile_inputs[@]}"; do
+    if grep -Eq '^[[:space:]]*int[[:space:]]+main[[:space:]]*\(' "$src_path"; then
+      continue
+    fi
+    fallback_inputs+=("$src_path")
+  done
+
+  # Try standalone build first. If that fails (for example, no main entry point),
+  # retry with the test harness as a fallback.
+  standalone_log="$job_bin_dir/job_bin_${job_safe}${suffix}.standalone.log"
+  fallback_log="$job_bin_dir/job_bin_${job_safe}${suffix}.fallback.log"
+  probe_input="$job_bin_dir/job_bin_${job_safe}${suffix}.probe_input.bin"
+  probe_output="$job_bin_dir/job_bin_${job_safe}${suffix}.probe_output.csv"
+
+  if clang "${compile_flags[@]}" "${compile_inputs[@]}" -o "$bin_path" 2>"$standalone_log"; then
+    # Probe the runtime argument contract expected by the test runner:
+    # executable with no args, reading stdin and writing stdout
+    : > "$probe_input"
+    if "$bin_path" < "$probe_input" > "$probe_output" 2>/dev/null; then
+      rm -f "$standalone_log" "$fallback_log" "$probe_input" "$probe_output"
+    else
+      if [ ! -f "$TEST_SOURCE_PATH" ]; then
+        log_always "ERROR: $job_id: Standalone runtime contract probe failed and test harness is missing at $TEST_SOURCE_PATH"
+        log_always "Standalone compiler output:"
+        cat "$standalone_log"
+        exit 1
+      fi
+
+      warn_once "$job_id|arg_contract_mismatch" "WARN: $job_id: Standalone binary argument contract mismatch, retrying with test harness fallback"
+      if clang "${compile_flags[@]}" "${fallback_inputs[@]}" "$TEST_SOURCE_PATH" -o "$bin_path" 2>"$fallback_log"; then
+        rm -f "$standalone_log" "$fallback_log" "$probe_input" "$probe_output"
+      else
+        log_always "ERROR: $job_id: Standalone compile succeeded but runtime contract probe failed, and fallback compilation also failed"
+        log_always "Standalone compiler output:"
+        cat "$standalone_log"
+        log_always "Fallback compiler output:"
+        cat "$fallback_log"
+        exit 1
+      fi
+    fi
+  else
+    if [ ! -f "$TEST_SOURCE_PATH" ]; then
+      log_always "ERROR: $job_id: Standalone compilation failed and test harness is missing at $TEST_SOURCE_PATH"
+      log_always "Standalone compiler output:"
+      cat "$standalone_log"
+      exit 1
+    fi
+
+    warn_once "$job_id|standalone_compile_failed" "WARN: $job_id: Standalone compile failed, retrying with test harness fallback"
+    if clang "${compile_flags[@]}" "${fallback_inputs[@]}" "$TEST_SOURCE_PATH" -o "$bin_path" 2>"$fallback_log"; then
+      rm -f "$standalone_log" "$fallback_log" "$probe_input" "$probe_output"
+    else
+      log_always "ERROR: $job_id: Compilation failed for both standalone and test harness fallback"
+      log_always "Standalone compiler output:"
+      cat "$standalone_log"
+      log_always "Fallback compiler output:"
+      cat "$fallback_log"
+      exit 1
+    fi
+  fi
+
+  printf '%s|%s|%s|%s|%s\n' "$job_id" "$job_safe" "$variant_label" "$suffix" "$bin_path" >> "$BIN_MAP_FILE"
 }
 
 convert_hex_directory() {
@@ -461,14 +550,14 @@ collect_hex_basenames() {
 
 run_tests_for_name_list() {
   names_file="$1"
-  while IFS=$'\t' read -r job_id job_safe variant_label suffix bin_path; do
+  while IFS='|' read -r job_id job_safe variant_label suffix bin_path; do
     [ -n "$job_id" ] || continue
     while IFS= read -r base_name; do
       [ -n "$base_name" ] || continue
       bin_input="$OUT_DIR/$base_name.bin"
       out_file="$OUT_DIR/${job_safe}_${base_name}${suffix}.csv"
       wait_for_slot
-      "$bin_path" "$bin_input" "$out_file" &
+      "$bin_path" < "$bin_input" > "$out_file" &
     done < "$names_file"
     wait_for_all_jobs
   done < "$BIN_MAP_FILE"
@@ -479,7 +568,7 @@ validate_outputs_for_name_list() {
   expected_base_dir="$2"
   phase_label="$3"
 
-  while IFS=$'\t' read -r job_id job_safe variant_label suffix bin_path; do
+  while IFS='|' read -r job_id job_safe variant_label suffix bin_path; do
     [ -n "$job_id" ] || continue
     while IFS= read -r base_name; do
       [ -n "$base_name" ] || continue
@@ -584,7 +673,7 @@ benchmark_all_jobs() {
   names_file="$1"
   : > "$BENCHMARK_RESULTS_FILE"
 
-  while IFS=$'\t' read -r job_id job_safe variant_label suffix bin_path; do
+  while IFS='|' read -r job_id job_safe variant_label suffix bin_path; do
     [ -n "$job_id" ] || continue
 
     benchmark_start=$(python3 -c "import time; print(time.time())")
@@ -601,7 +690,7 @@ benchmark_all_jobs() {
       total_messages=$((total_messages + messages_in_file))
 
       wait_for_slot
-      "$bin_path" "$bin_input" "$out_file" &
+      "$bin_path" < "$bin_input" > "$out_file" &
       file_count=$((file_count + 1))
     done < "$names_file"
     wait_for_all_jobs

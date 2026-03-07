@@ -1,15 +1,15 @@
 /* main.c */
 /* Authors: Daniel Xu */
-#include <stdio.h>
+#include "can_decode.c"
 #include <stdint.h>
-#include "can_decode.h"
+#include <stdio.h>
 
 int main(void) {
-    uint8_t incoming[2] = { 0xA5, 0x96 };
+  uint8_t incoming[2] = {0xA5, 0x96};
 
-    Row11Flags flags = decode_row11_from_bytes(incoming[0], incoming[1]);
+  Row11Flags flags = decode_row11_from_bytes(incoming[0], incoming[1]);
 
-    print_row11(&flags);
+  print_row11(&flags);
 
-    return 0;
+  return 0;
 }

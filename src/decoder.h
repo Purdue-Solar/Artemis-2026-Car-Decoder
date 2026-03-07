@@ -48,7 +48,7 @@ struct message {
 int read_message_from_file(FILE *file, struct message *msg);
 float convert_to_b_float(uint16_t data);
 void parse_status_flags(uint16_t bits, struct status_flags *flags);
-void print_bool_array(FILE *file, const uint8_t *values, size_t length,
+void print_bool_flags(FILE *file, const struct status_flags *flags,
                       const char *delimiter);
 int main(int argc, char *argv[]);
 
