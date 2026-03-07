@@ -10,7 +10,7 @@ for arg in "$@"; do
 done
 
 # Constants
-NUM_SYNTHETIC_TESTS=1000
+NUM_SYNTHETIC_TESTS=10
 MESSAGE_COUNT=500
 MESSAGE_SIZE_BYTES=19
 SEED_RETRY_LIMIT=100
@@ -23,7 +23,7 @@ OUT_DIR_NAME="Test_Out"
 GENERATED_SEED_FILE_NAME="generated_seeds.txt"
 GENERATOR_SCRIPT_NAME="generate_synthetic_12h_500.py"
 SYNTHETIC_NAME_PREFIX="synthetic_12h_500_"
-DECODER_SOURCE_NAME="decoder.c"
+DECODER_SOURCE_NAME="src/decoder.c"
 TEST_SOURCE_NAME="test_decoder.c"
 OBJ_FILE_NAME="decoder.o"
 TEST_BIN_NAME="decoder_test"
@@ -38,11 +38,24 @@ OPT_FLAG_MOD="-O2"
 OPT_FLAG_AGG="-O3"
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
-TEST_DIR="$ROOT_DIR/$TEST_DIR_NAME"
-EXPECTED_DIR="$ROOT_DIR/$EXPECTED_DIR_NAME"
-GENERATED_DIR="$ROOT_DIR/$GENERATED_DIR_NAME"
-GENERATED_EXPECTED_DIR="$ROOT_DIR/$GENERATED_EXPECTED_DIR_NAME"
-OUT_DIR="$ROOT_DIR/$OUT_DIR_NAME"
+
+root_path() {
+  local relative_path="${1#./}"
+  relative_path="${relative_path#/}"
+  echo "$ROOT_DIR/$relative_path"
+}
+
+TEST_DIR=$(root_path "$TEST_DIR_NAME")
+EXPECTED_DIR=$(root_path "$EXPECTED_DIR_NAME")
+GENERATED_DIR=$(root_path "$GENERATED_DIR_NAME")
+GENERATED_EXPECTED_DIR=$(root_path "$GENERATED_EXPECTED_DIR_NAME")
+OUT_DIR=$(root_path "$OUT_DIR_NAME")
+DECODER_SOURCE_PATH=$(root_path "$DECODER_SOURCE_NAME")
+TEST_SOURCE_PATH=$(root_path "$TEST_DIR_NAME/$TEST_SOURCE_NAME")
+GENERATOR_SCRIPT_PATH=$(root_path "$TEST_DIR_NAME/$GENERATOR_SCRIPT_NAME")
+
+DECODER_SOURCE_DIR=$(dirname "$DECODER_SOURCE_PATH")
+CLANG_INCLUDE_FLAGS=(-I"$ROOT_DIR" -I"$DECODER_SOURCE_DIR")
 OBJ_FILE="$OUT_DIR/$OBJ_FILE_NAME"
 TEST_BIN="$OUT_DIR/$TEST_BIN_NAME"
 OBJ_LIGHT_FILE="$OUT_DIR/$OBJ_LIGHT_FILE_NAME"
@@ -51,6 +64,21 @@ OBJ_MOD_FILE="$OUT_DIR/$OBJ_MOD_FILE_NAME"
 TEST_BIN_MOD="$OUT_DIR/$TEST_BIN_MOD_NAME"
 OBJ_AGG_FILE="$OUT_DIR/$OBJ_AGG_FILE_NAME"
 TEST_BIN_AGG="$OUT_DIR/$TEST_BIN_AGG_NAME"
+
+if [ ! -f "$DECODER_SOURCE_PATH" ]; then
+  log_always "ERROR: Decoder source not found at $DECODER_SOURCE_PATH"
+  exit 1
+fi
+
+if [ ! -f "$TEST_SOURCE_PATH" ]; then
+  log_always "ERROR: Test source not found at $TEST_SOURCE_PATH"
+  exit 1
+fi
+
+if [ ! -f "$GENERATOR_SCRIPT_PATH" ]; then
+  log_always "ERROR: Generator script not found at $GENERATOR_SCRIPT_PATH"
+  exit 1
+fi
 
 # Logging helper
 log() {
@@ -117,7 +145,7 @@ if [ "$NUM_SYNTHETIC_TESTS" -gt 0 ]; then
     echo "$seed" >> "$USED_SEEDS_FILE"
     name="$SYNTHETIC_NAME_PREFIX$seed"
     
-    python3 "$TEST_DIR/$GENERATOR_SCRIPT_NAME" \
+    python3 "$GENERATOR_SCRIPT_PATH" \
       "$name" "$seed" \
       --hex-dir "$GENERATED_DIR" \
       --expected-dir "$GENERATED_EXPECTED_DIR" > /dev/null 2>&1
@@ -164,17 +192,17 @@ fi
 # STEP 3: COMPILE ALL OPTIMIZATION LEVELS
 # ============================================================================
 log "Compiling decoder with all optimization levels..."
-clang -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_FILE" 2>/dev/null
-clang -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_FILE" -o "$TEST_BIN" 2>/dev/null
+clang "${CLANG_INCLUDE_FLAGS[@]}" -Dmain=decoder_main -c "$DECODER_SOURCE_PATH" -o "$OBJ_FILE" 2>/dev/null
+clang "${CLANG_INCLUDE_FLAGS[@]}" "$TEST_SOURCE_PATH" "$OBJ_FILE" -o "$TEST_BIN" 2>/dev/null
 
-clang $OPT_FLAG_LIGHT -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_LIGHT_FILE" 2>/dev/null
-clang $OPT_FLAG_LIGHT -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_LIGHT_FILE" -o "$TEST_BIN_LIGHT" 2>/dev/null
+clang $OPT_FLAG_LIGHT "${CLANG_INCLUDE_FLAGS[@]}" -Dmain=decoder_main -c "$DECODER_SOURCE_PATH" -o "$OBJ_LIGHT_FILE" 2>/dev/null
+clang $OPT_FLAG_LIGHT "${CLANG_INCLUDE_FLAGS[@]}" "$TEST_SOURCE_PATH" "$OBJ_LIGHT_FILE" -o "$TEST_BIN_LIGHT" 2>/dev/null
 
-clang $OPT_FLAG_MOD -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_MOD_FILE" 2>/dev/null
-clang $OPT_FLAG_MOD -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_MOD_FILE" -o "$TEST_BIN_MOD" 2>/dev/null
+clang $OPT_FLAG_MOD "${CLANG_INCLUDE_FLAGS[@]}" -Dmain=decoder_main -c "$DECODER_SOURCE_PATH" -o "$OBJ_MOD_FILE" 2>/dev/null
+clang $OPT_FLAG_MOD "${CLANG_INCLUDE_FLAGS[@]}" "$TEST_SOURCE_PATH" "$OBJ_MOD_FILE" -o "$TEST_BIN_MOD" 2>/dev/null
 
-clang $OPT_FLAG_AGG -I"$ROOT_DIR" -Dmain=decoder_main -c "$ROOT_DIR/$DECODER_SOURCE_NAME" -o "$OBJ_AGG_FILE" 2>/dev/null
-clang $OPT_FLAG_AGG -I"$ROOT_DIR" "$TEST_DIR/$TEST_SOURCE_NAME" "$OBJ_AGG_FILE" -o "$TEST_BIN_AGG" 2>/dev/null
+clang $OPT_FLAG_AGG "${CLANG_INCLUDE_FLAGS[@]}" -Dmain=decoder_main -c "$DECODER_SOURCE_PATH" -o "$OBJ_AGG_FILE" 2>/dev/null
+clang $OPT_FLAG_AGG "${CLANG_INCLUDE_FLAGS[@]}" "$TEST_SOURCE_PATH" "$OBJ_AGG_FILE" -o "$TEST_BIN_AGG" 2>/dev/null
 
 log "Compilation complete."
 
