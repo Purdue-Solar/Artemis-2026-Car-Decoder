@@ -18,6 +18,7 @@
  *
  * Returns: 0 for success, 1 for any error or end of file
  */
+
 int read_message_from_file(FILE *file, struct message *msg) {
   if (file == NULL) {
     fprintf(stderr, "Error: file is NULL\n");
@@ -89,6 +90,7 @@ int read_message_from_file(FILE *file, struct message *msg) {
  *
  * Returns: the 32 bit float representation
  */
+
 float convert_to_b_float(uint16_t data) {
   uint32_t bits = ((uint32_t)data) << 16;
   float result;
@@ -106,6 +108,7 @@ float convert_to_b_float(uint16_t data) {
  *
  * Returns: void
  */
+
 void parse_status_flags(uint16_t bits, struct status_flags *flags) {
   flags->regen = (bits >> 0) & 0x01;
   flags->cruise_down = (bits >> 1) & 0x01;
@@ -133,6 +136,7 @@ void parse_status_flags(uint16_t bits, struct status_flags *flags) {
  *
  * Returns: void
  */
+
 void print_bool_flags(FILE *file, const struct status_flags *flags,
                       const char *delimiter) {
   if ((file == NULL) || (flags == NULL) || (delimiter == NULL)) {
